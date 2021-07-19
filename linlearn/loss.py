@@ -1,6 +1,8 @@
 from math import exp, log
-from numba import njit, jitclass, vectorize, prange
+from numba import njit, vectorize, prange
 from numba.types import int64, float64, boolean
+
+from numba.experimental import jitclass
 
 from collections import namedtuple
 
@@ -143,7 +145,36 @@ def logisic_factory():
     )
 
 
-losses_factory = {"logistic": logisic_factory}
+@njit(fastmath=True, inline="always")
+def leastsquares_value_single(y, z):
+    return 0.5*(y-z)**2
+
+
+@njit
+def leastsquares_value_batch(y, z):
+    return 0.5*((y-z)**2).sum()
+
+
+@njit
+def leastsquares_derivative(y, z):
+    return z-y
+
+
+@njit
+def leastsquares_lip():
+    return 1.
+
+
+def leastsquares_factory():
+    return Loss(
+        value_single=leastsquares_value_single,
+        value_batch=leastsquares_value_batch,
+        derivative=leastsquares_derivative,
+        lip=leastsquares_lip,
+    )
+
+
+losses_factory = {"logistic": logisic_factory, "leastsquares": leastsquares_factory}
 
 # y = np.random.randn(100)
 # z = np.random.randn(100)
