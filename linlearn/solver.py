@@ -9,6 +9,7 @@ from collections import namedtuple
 # from linlearn.model.utils import inner_prods
 
 from .strategy import grad_coordinate_erm, decision_function
+from .penalty import l1_apply_single
 
 # TODO: good default for tol when using duality gap
 # TODO: step=float or {'best', 'auto'}
@@ -18,6 +19,7 @@ OptimizationResult = namedtuple(
     "OptimizationResult", ["n_iter", "tol", "success", "w", "message"]
 )
 
+DELTA = 0.01
 
 # Attributes
 # xndarray
@@ -116,7 +118,7 @@ OptimizationResult = namedtuple(
 
 # @njit
 def coordinate_gradient_descent(
-    loss, penalty, strategy, w, X, y, fit_intercept, steps, max_iter, tol, history,
+    loss, penalty, strategy, w, X, y, fit_intercept, steps, max_iter, tol, history, thresholding=False
 ):
     n_samples, n_features = X.shape
 
@@ -150,7 +152,7 @@ def coordinate_gradient_descent(
 
     @njit
     def coordinate_gradient_descent_cycle(
-        w, inner_products, coordinates,
+        w, inner_products, coordinates, thresholds=None, cycle=None
     ):
         """This function implements one cycle of coordinate gradient descent
         """
@@ -166,13 +168,10 @@ def coordinate_gradient_descent(
             # TODO: pour integrer mom il suffit de passer aussi en argument grad_coordinate mais les protoypes sont differents...
 
             grad_j = grad_coordinate(j, inner_products)
-            # grad_j = grad_coordinate_erm(
-            #     loss_derivative, j, X, y, inner_products, fit_intercept
-            # )
-            # print("grad_j:, ", grad_j)
-            # grad_j = grad_coordinate_erm(
-            #     loss_derivative, j, X, y, inner_products, fit_intercept
-            # )
+
+            if thresholding and cycle > 20:
+                grad_j = l1_apply_single(grad_j, thresholds[j])
+
             if fit_intercept and j == 0:
                 # It's the intercept, so we don't penalize
                 w_j_new = w[j] - steps[j] * grad_j
@@ -217,13 +216,19 @@ def coordinate_gradient_descent(
     # TODO: First value for tolerance is 1.0 or NaN
     history.update(epoch=0, obj=obj, tol=1.0, update_bar=False)
 
+    def compute_thresholds():
+        variances = estimate_grad_coord_variances(loss, X, y, w, fit_intercept, inner_products, strategy.n_samples_in_block)
+        return np.sqrt(variances/n_samples)# * np.log(n_features*max_iter/DELTA)
+
+    thresholds = compute_thresholds() if thresholding else None
+
     for cycle in range(1, max_iter + 1):
         # Sample a permutation of the coordinates
         coordinates = permutation(w_size)
         # Launch the coordinates cycle
 
         max_abs_delta, max_abs_weight = coordinate_gradient_descent_cycle(
-            w, inner_products, coordinates
+            w, inner_products, coordinates, thresholds, cycle
         )
 
         # Compute the new value of objective
@@ -336,6 +341,70 @@ def coordinate_gradient_descent_factory():
 
 
 solvers_factory = {"cgd": coordinate_gradient_descent_factory}
+
+
+def estimate_grad_coord_variances(loss, X, y, w, fit_intercept, inner_products, n_samples_in_block):
+
+    variances = np.empty_like(w)
+    loss_derivative = loss.derivative
+
+    n_samples = inner_products.shape[0]
+
+    n_blocks = n_samples // n_samples_in_block
+    last_block_size = n_samples % n_samples_in_block
+    n_blocks += int(last_block_size > 0)
+
+    grad_means_in_blocks = np.empty(n_blocks, dtype=X.dtype)
+    grad_sqmeans_in_blocks = np.empty(n_blocks, dtype=X.dtype)
+
+    from numpy.random import permutation
+
+    # This shuffle or the indexes to get different blocks each time
+    idx_samples = np.arange(n_samples)
+    permutation(idx_samples)
+
+    # Cumulative sum in the block
+    grad_block = 0.0
+    grad_sq_block = 0.0
+
+    grads = np.empty((n_samples, len(w)), dtype=X.dtype)
+
+    for idx in range(n_samples):
+        i = idx_samples[idx]
+        if fit_intercept:
+            grads[i, 0] = loss_derivative(y[i], inner_products[i])
+            # print(grads[1:].shape, X[i, :].shape)
+            grads[i, 1:] = grads[i, 0] * X[i, :]
+        else:
+            grads[i,:] = loss_derivative(y[i], inner_products[i]) * X[i, :]
+
+    grads_sq = np.power(grads, 2)
+
+    for j in range(len(w)):
+        # Block counter
+        n_block = 0
+        for idx in range(n_samples):
+            i = idx_samples[idx]
+            # Update current sum in the block
+            grad_block += grads[i, j]
+            grad_sq_block += grads_sq[i, j]
+            # sum_block += x[i]
+            if (i != 0) and ((i + 1) % n_samples_in_block == 0):
+                # It's the end of the block, we need to save its mean
+                # print("sum_block: ", sum_block)
+                grad_means_in_blocks[n_block] = grad_block / n_samples_in_block
+                grad_sqmeans_in_blocks[n_block] = grad_sq_block / n_samples_in_block
+                n_block += 1
+                grad_block = 0.0
+                grad_sq_block = 0.0
+
+        if last_block_size != 0:
+            grad_means_in_blocks[n_block] = grad_block / last_block_size
+            grad_sqmeans_in_blocks[n_block] = grad_sq_block / last_block_size
+
+        variances[j] = np.median(grad_sqmeans_in_blocks) - (np.median(grad_means_in_blocks)) ** 2
+
+    return variances
 
 
 # Dans SAG critere d'arret :
