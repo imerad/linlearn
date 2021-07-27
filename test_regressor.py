@@ -11,7 +11,7 @@ from matplotlib.colors import ListedColormap
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.pipeline import Pipeline
 
-n_samples = 501
+n_samples = 500
 n_features = 5
 
 rng = np.random.RandomState(42)

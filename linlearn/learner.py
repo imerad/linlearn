@@ -240,10 +240,10 @@ class MOMBase(ClassifierMixin, BaseEstimator):
 
         if self.solver == "cgd":
             # Get the gradient descent steps for each coordinate
-            steps = steps_coordinate_descent(loss.lip, X, self.fit_intercept)
+            steps = steps_coordinate_descent(loss.lip, X, n_samples_in_block, self.fit_intercept)
             self.history_ = History("CGD", self.max_iter, self.verbose)
 
-            def solve(w):
+            def solve(w, tracked_funs=None):
                 return coordinate_gradient_descent(
                     loss,
                     penalty,
@@ -256,7 +256,8 @@ class MOMBase(ClassifierMixin, BaseEstimator):
                     self.max_iter,
                     self.tol,
                     self.history_,
-                    thresholding=self.thresholding
+                    thresholding=self.thresholding,
+                    tracked_funs=tracked_funs
                 )
 
             return solve
@@ -264,7 +265,7 @@ class MOMBase(ClassifierMixin, BaseEstimator):
         else:
             raise NotImplementedError("%s is not implemented yet" % self.solver)
 
-    def fit(self, X, y, sample_weight=None):
+    def fit(self, X, y, sample_weight=None, tracked_funs=None):
         """
         Fit the model according to the given training data.
 
@@ -381,7 +382,7 @@ class MOMBase(ClassifierMixin, BaseEstimator):
         #######
         solver = self._get_solver(X, y_encoded)
         w = self._get_initial_iterate(X, y_encoded)
-        optimization_result = solver(w)
+        optimization_result = solver(w, tracked_funs=tracked_funs)
 
         self.optimization_result_ = optimization_result
         self.n_iter_ = np.asarray([optimization_result.n_iter], dtype=np.int32)
@@ -596,9 +597,9 @@ class MOMRegressor(MOMBase, RegressorMixin):
     def __init__(
         self,
         *,
-        penalty="l2",
+        penalty="none",
         C=1.0,
-        loss="logistic",
+        loss="leastsquares",
         fit_intercept=True,
         strategy="erm",
         block_size=0.07,
@@ -656,5 +657,5 @@ class MOMRegressor(MOMBase, RegressorMixin):
 
         from sklearn.metrics import mean_squared_error
 
-        return mean_squared_error(y, self.predict(X), sample_weight=sample_weight)
+        return mean_squared_error(y, self.predict(X), sample_weight=sample_weight)/2
 

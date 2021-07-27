@@ -16,7 +16,7 @@ from .penalty import l1_apply_single
 # TODO: random_state same thing as in scikit
 
 OptimizationResult = namedtuple(
-    "OptimizationResult", ["n_iter", "tol", "success", "w", "message"]
+    "OptimizationResult", ["n_iter", "tol", "success", "w", "message", "tracked_funs"]
 )
 
 DELTA = 0.01
@@ -118,7 +118,7 @@ DELTA = 0.01
 
 # @njit
 def coordinate_gradient_descent(
-    loss, penalty, strategy, w, X, y, fit_intercept, steps, max_iter, tol, history, thresholding=False
+    loss, penalty, strategy, w, X, y, fit_intercept, steps, max_iter, tol, history, thresholding=False, tracked_funs=None
 ):
     n_samples, n_features = X.shape
 
@@ -131,10 +131,18 @@ def coordinate_gradient_descent(
     loss_value_batch = loss.value_batch
     loss_derivative = loss.derivative
 
+    steps *= 0.1
+    print("MOM estimator : MULTIPLYING STEPS BY 0.1")
+
     penalty_value = penalty.value
     penalty_apply_single = penalty.apply_single
 
     w_size = w.shape[0]
+
+    if tracked_funs:
+        tracks = [np.ones(max_iter) for i in range(len(tracked_funs))]
+    else:
+        tracks = None
 
     # Objective function
     # TODO: can be njitted right ?
@@ -152,7 +160,7 @@ def coordinate_gradient_descent(
 
     @njit
     def coordinate_gradient_descent_cycle(
-        w, inner_products, coordinates, thresholds=None, cycle=None
+        w, inner_products, coordinates, thresholds=None, cycle=None,
     ):
         """This function implements one cycle of coordinate gradient descent
         """
@@ -169,7 +177,7 @@ def coordinate_gradient_descent(
 
             grad_j = grad_coordinate(j, inner_products)
 
-            if thresholding and cycle > 20:
+            if thresholding:# and cycle > 20:
                 grad_j = l1_apply_single(grad_j, thresholds[j])
 
             if fit_intercept and j == 0:
@@ -216,9 +224,11 @@ def coordinate_gradient_descent(
     # TODO: First value for tolerance is 1.0 or NaN
     history.update(epoch=0, obj=obj, tol=1.0, update_bar=False)
 
+
     def compute_thresholds():
         variances = estimate_grad_coord_variances(loss, X, y, w, fit_intercept, inner_products, strategy.n_samples_in_block)
-        return np.sqrt(variances/n_samples)# * np.log(n_features*max_iter/DELTA)
+        return np.sqrt(variances * (np.log(n_features*max_iter)/n_samples + 1/(8*strategy.n_samples_in_block)))/10 #
+
 
     thresholds = compute_thresholds() if thresholding else None
 
@@ -230,6 +240,10 @@ def coordinate_gradient_descent(
         max_abs_delta, max_abs_weight = coordinate_gradient_descent_cycle(
             w, inner_products, coordinates, thresholds, cycle
         )
+
+        if tracked_funs:
+            for i, f in enumerate(tracked_funs):
+                tracks[i][cycle-1] = f(w)
 
         # Compute the new value of objective
         obj = objective(w)
@@ -264,15 +278,17 @@ def coordinate_gradient_descent(
         history.update(epoch=cycle, obj=obj, tol=current_tol, update_bar=True)
 
         # Decide if we stop or not
-        if current_tol < tol:
-            history.close_bar()
-            return OptimizationResult(
-                w=w, n_iter=cycle, success=True, tol=tol, message=None
-            )
+        # if current_tol < tol:
+        #     history.close_bar()
+        #     return OptimizationResult(
+        #         w=w, n_iter=cycle, success=True, tol=tol, message=None, tracked_funs=tracks
+        #     )
+        if thresholding:
+            thresholds = compute_thresholds()
 
     history.close_bar()
     return OptimizationResult(
-        w=w, n_iter=max_iter + 1, success=False, tol=tol, message=None
+        w=w, n_iter=max_iter + 1, success=False, tol=tol, message=None, tracked_funs=tracks
     )
 
     # TODO: stopping criterion max(weigth difference) / max(weight) + duality gap

@@ -6,6 +6,8 @@ from numba.experimental import jitclass
 
 from collections import namedtuple
 
+from .strategy import median_of_means
+
 import numpy as np
 
 Loss = namedtuple("Loss", ["value_single", "value_batch", "derivative", "lip"])
@@ -32,27 +34,49 @@ def loss_value_batch(loss_value_single, y, z):
 
 
 # @njit(parallel=True)
+
+# @njit
+# def steps_coordinate_descent(loss_lip, X, fit_intercept):
+#     # def col_squared_norm_dense(X, fit_intercept):
+#     n_samples, n_features = X.shape
+#     lip_const = loss_lip()
+#     if fit_intercept:
+#         steps = np.zeros(n_features + 1, dtype=X.dtype)
+#         # First squared norm is n_samples
+#         steps[0] = 1 / lip_const
+#         for j in prange(1, n_features + 1):
+#             col_j_squared_norm = 0.0
+#             for i in range(n_samples):
+#                 col_j_squared_norm += X[i, j - 1] ** 2
+#             steps[j] = n_samples / (lip_const * col_j_squared_norm)
+#     else:
+#         steps = np.zeros(n_features, dtype=X.dtype)
+#         for j in prange(n_features):
+#             col_j_squared_norm = 0.0
+#             for i in range(n_samples):
+#                 col_j_squared_norm += X[i, j - 1] ** 2
+#             steps[j] = n_samples / (lip_const * col_j_squared_norm)
+#     # print(steps)
+#     # steps /= n_samples
+#     return steps
+
+
 @njit
-def steps_coordinate_descent(loss_lip, X, fit_intercept):
+def steps_coordinate_descent(loss_lip, X, block_size, fit_intercept):
     # def col_squared_norm_dense(X, fit_intercept):
     n_samples, n_features = X.shape
     lip_const = loss_lip()
+    block_means = np.empty(n_samples // block_size + int(n_samples % block_size > 0), dtype=X.dtype)
     if fit_intercept:
         steps = np.zeros(n_features + 1, dtype=X.dtype)
         # First squared norm is n_samples
         steps[0] = 1 / lip_const
         for j in prange(1, n_features + 1):
-            col_j_squared_norm = 0.0
-            for i in range(n_samples):
-                col_j_squared_norm += X[i, j - 1] ** 2
-            steps[j] = n_samples / (lip_const * col_j_squared_norm)
+            steps[j] = median_of_means(X[:, j - 1] ** 2, block_size, block_means) / lip_const
     else:
         steps = np.zeros(n_features, dtype=X.dtype)
         for j in prange(n_features):
-            col_j_squared_norm = 0.0
-            for i in range(n_samples):
-                col_j_squared_norm += X[i, j - 1] ** 2
-            steps[j] = n_samples / (lip_const * col_j_squared_norm)
+            steps[j] = median_of_means(X[:, j] ** 2, block_size, block_means) / lip_const
     # print(steps)
     # steps /= n_samples
     return steps
@@ -152,7 +176,7 @@ def leastsquares_value_single(y, z):
 
 @njit
 def leastsquares_value_batch(y, z):
-    return 0.5*((y-z)**2).sum()
+    return 0.5*((y-z)**2).mean()
 
 
 @njit
