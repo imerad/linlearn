@@ -3,7 +3,7 @@ import numpy as np
 
 catoni = np.frompyfunc(lambda x : np.log(1 + x + x*x/2) if x > 0 else -np.log(1 - x + x*x/2), 1, 1)
 khi = np.frompyfunc(lambda x : 1 - 0.34 - 1/(1 + x*x), 1, 1)
-gud = np.frompyfunc(lambda x : 2*np.arctan(np.exp(x)) - np.pi/2, 1, 1)
+gud = np.frompyfunc(lambda x : 2*np.arctan(np.exp(x)) - np.pi/2 if x < 10 else np.pi/2, 1, 1)
 
 
 def estimate_sigma(x, eps=0.001):

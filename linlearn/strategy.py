@@ -2,6 +2,7 @@ import numpy as np
 from numpy.random import permutation
 from numba import njit, prange
 from collections import namedtuple
+from .catoni import standard_catoni_estimator
 
 # @njit
 # def inner_prod(X, fit_intercept, i, w):
@@ -286,8 +287,58 @@ def mom_strategy_factory(loss, X, y, fit_intercept, n_samples_in_block, **kwargs
         grad_coordinate=grad_coordinate, n_samples_in_block=n_samples_in_block
     )
 
+@njit
+def grad_coordinate_catoni(
+    loss_derivative,
+    j,
+    X,
+    y,
+    inner_products,
+    fit_intercept,
+):
+    """Computation of the derivative of the loss with respect to a coordinate using the
+    catoni stategy."""
+    # grad = 0.0
+    # TODO: parallel ?
+    # TODO: sparse matrix ?
+    n_samples = inner_products.shape[0]
 
-strategies_factory = {"erm": erm_strategy_factory, "mom": mom_strategy_factory}
+    # TODO:instanciates in the closure
+
+    place_holder = np.empty(n_samples, dtype=X.dtype)
+
+    if fit_intercept:
+        if j == 0:
+            # In this case it's the derivative w.r.t the intercept
+            for idx in range(n_samples):
+                place_holder[idx] = loss_derivative(y[idx], inner_products[idx])
+
+        else:
+            for idx in range(n_samples):
+                place_holder[idx] = loss_derivative(y[idx], inner_products[idx]) * X[idx, j - 1]
+
+    else:
+        # There is no intercept
+        for idx in range(n_samples):
+            place_holder[idx] = loss_derivative(y[idx], inner_products[idx]) * X[idx, j]
+
+        return standard_catoni_estimator(place_holder)
+
+
+def catoni_strategy_factory(loss, X, y, fit_intercept, **kwargs):
+    @njit
+    def grad_coordinate(j, inner_products):
+        return grad_coordinate_catoni(
+            loss.derivative, j, X, y, inner_products, fit_intercept
+        )
+
+    return Strategy(
+        grad_coordinate=grad_coordinate, n_samples_in_block=None
+    )
+
+
+
+strategies_factory = {"erm": erm_strategy_factory, "mom": mom_strategy_factory, "catoni": catoni_strategy_factory}
 
 # erm_strategy = Strategy(grad_coordinate=grad_coordinate_erm)
 

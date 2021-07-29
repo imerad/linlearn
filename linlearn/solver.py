@@ -131,9 +131,6 @@ def coordinate_gradient_descent(
     loss_value_batch = loss.value_batch
     loss_derivative = loss.derivative
 
-    steps *= 0.1
-    print("MOM estimator : MULTIPLYING STEPS BY 0.1")
-
     penalty_value = penalty.value
     penalty_apply_single = penalty.apply_single
 
@@ -227,7 +224,7 @@ def coordinate_gradient_descent(
 
     def compute_thresholds():
         variances = estimate_grad_coord_variances(loss, X, y, w, fit_intercept, inner_products, strategy.n_samples_in_block)
-        return np.sqrt(variances * (np.log(n_features*max_iter)/n_samples + 1/(8*strategy.n_samples_in_block)))/10 #
+        return np.sqrt(variances * (np.log(n_features*max_iter)/n_samples + 1/(8*strategy.n_samples_in_block)))/3 #
 
 
     thresholds = compute_thresholds() if thresholding else None
@@ -276,6 +273,8 @@ def coordinate_gradient_descent(
 
         # TODO: tester tous les cas "max_abs_weight == 0.0" etc..
         history.update(epoch=cycle, obj=obj, tol=current_tol, update_bar=True)
+
+        # Just go through the full iteration
 
         # Decide if we stop or not
         # if current_tol < tol:

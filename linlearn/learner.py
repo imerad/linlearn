@@ -41,6 +41,7 @@ class MOMBase(ClassifierMixin, BaseEstimator):
         *,
         penalty="l2",
         C=1.0,
+        step_size=1.0,
         loss="logistic",
         fit_intercept=True,
         strategy="erm",
@@ -58,6 +59,7 @@ class MOMBase(ClassifierMixin, BaseEstimator):
     ):
         self.penalty = penalty
         self.C = C
+        self.step_size = step_size
         self.loss = loss
         self.strategy = strategy
         self.block_size = block_size
@@ -101,6 +103,17 @@ class MOMBase(ClassifierMixin, BaseEstimator):
             raise ValueError("C must be a positive number; got (C=%r)" % val)
         else:
             self._C = float(val)
+
+    @property
+    def step_size(self):
+        return self._step_size
+
+    @step_size.setter
+    def step_size(self, val):
+        if not isinstance(val, numbers.Real) or val < 0:
+            raise ValueError("step_size must be a positive number; got (step_size=%r)" % val)
+        else:
+            self._step_size = float(val)
 
     @property
     def loss(self):
@@ -240,7 +253,8 @@ class MOMBase(ClassifierMixin, BaseEstimator):
 
         if self.solver == "cgd":
             # Get the gradient descent steps for each coordinate
-            steps = steps_coordinate_descent(loss.lip, X, n_samples_in_block, self.fit_intercept)
+            self._steps = steps_coordinate_descent(loss.lip, X, n_samples_in_block, self.fit_intercept)
+            steps = self.step_size * steps_coordinate_descent(loss.lip, X, n_samples_in_block, self.fit_intercept)
             self.history_ = History("CGD", self.max_iter, self.verbose)
 
             def solve(w, tracked_funs=None):
@@ -415,6 +429,7 @@ class BinaryClassifier(MOMBase, ClassifierMixin):
         *,
         penalty="l2",
         C=1.0,
+        step_size=1.0,
         loss="logistic",
         fit_intercept=True,
         strategy="erm",
@@ -433,6 +448,7 @@ class BinaryClassifier(MOMBase, ClassifierMixin):
         super(BinaryClassifier, self).__init__(
             penalty=penalty,
             C=C,
+            step_size=step_size,
             loss=loss,
             fit_intercept=fit_intercept,
             strategy=strategy,
@@ -599,6 +615,7 @@ class MOMRegressor(MOMBase, RegressorMixin):
         *,
         penalty="none",
         C=1.0,
+        step_size=0.1,
         loss="leastsquares",
         fit_intercept=True,
         strategy="erm",
@@ -616,6 +633,7 @@ class MOMRegressor(MOMBase, RegressorMixin):
         super(MOMRegressor, self).__init__(
             penalty=penalty,
             C=C,
+            step_size=step_size,
             loss=loss,
             fit_intercept=fit_intercept,
             strategy=strategy,
