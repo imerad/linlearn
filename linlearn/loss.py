@@ -156,7 +156,7 @@ def softmax1(z, j):
 
 @njit(fastmath=True, inline="always")
 def logistic_value_single(y, z):
-    s = y * z[0]
+    s = y * z
     if s > 0:
         return log(1 + exp(-s))
     else:
@@ -170,6 +170,7 @@ def logistic_value_batch(y, z):
 
 @njit
 def logistic_derivative(y, z, j1=0):
+    assert j1 == 0
     return -y * sigmoid(-y * z[j1])
 
 

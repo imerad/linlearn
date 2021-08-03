@@ -82,7 +82,8 @@ def l2sq_apply_single(x, t):
 def l2sq_value(x, strength):
     l2sq = 0.0
     for j in range(x.shape[0]):
-        l2sq += x[j] * x[j]
+        for k in range(x.shape[1]):
+            l2sq += x[j,k] * x[j,k]
     return strength * l2sq
 
 

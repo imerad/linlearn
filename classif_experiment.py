@@ -113,7 +113,16 @@ col_try, col_noise, col_algo, col_val, col_n_samples = [], [], [], [], []
 #
 #     logging.info("Saved results in file %s" % filename)
 
-mom_reg = MultiClassifier(tol=1e-17, max_iter=10, fit_intercept=False, strategy="mom",
-                             thresholding=False, step_size=0.01, loss="multilogistic", penalty="none")
+mom_reg = MultiClassifier(tol=1e-17, max_iter=150, fit_intercept=False, strategy="mom",
+                             thresholding=False, step_size=0.1, loss="multilogistic", penalty="none")
 
-mom_reg.fit(np.ascontiguousarray(mnist_train_images[:100,:]), np.ascontiguousarray(mnist_train_labels[:100,:]))
+n_samples = 5000
+
+mom_reg.fit(np.ascontiguousarray(mnist_train_images[:n_samples,:]), np.ascontiguousarray(mnist_train_labels[:n_samples,:]))
+pred = mom_reg.predict(mnist_train_images[:n_samples,:])
+
+correct = 0
+for i in range(n_samples):
+    if pred[i] == np.argmax(mnist_train_labels[i, :]):
+        correct += 1
+print(correct/n_samples)

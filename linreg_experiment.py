@@ -27,9 +27,9 @@ logging.info(128*"=")
 if not save_results:
     logging.info("WARNING : results will NOT be saved at the end of this session")
 
-n_repeats = 5#10
+n_repeats = 10
 
-n_samples = 200
+n_samples = 500
 n_features = 5
 
 n_outliers = 10
@@ -37,13 +37,13 @@ outliers = False
 
 mom_thresholding = True
 mom_thresholding = False
-mom_K = 20
+MOMreg_block_size = 0.02
 adamom_K_init = 20
 
 catoni_thresholding = True
 catoni_thresholding = False
 
-random_seed = 42
+random_seed = 43
 
 noise_sigma = {"gaussian": 20, "lognormal": 1.75, "pareto": 10}
 
@@ -51,15 +51,15 @@ Sigma_X = np.diag(np.arange(1, n_features+1))
 mu_X = np.ones(n_features)
 
 w_star_dist = "normal"
-noise_dist = "gaussian"
+noise_dist = "lognormal"
 
 step_size = 0.01
-T = 20
+T = 60
 
 logging.info("Lauching experiment with parameters : \n n_repeats = %d , n_samples = %d , n_features = %d , outliers = %r" % (n_repeats, n_samples, n_features, outliers))
 if outliers:
     logging.info("n_outliers = %d" % n_outliers)
-logging.info("nb blocks for MOM_CGD is %d" % mom_K)
+logging.info("block size for MOM_CGD is %f" % MOMreg_block_size)
 logging.info("initial nb blocks for adaptive MOM is %d" % adamom_K_init)
 logging.info("mom_thresholding = %r , random_seed = %d , mu_X = %r , Sigma_X = %r" % (mom_thresholding, random_seed, mu_X, Sigma_X))
 logging.info("w_star_dist = %s , noise_dist = %s , sigma = %f" % (w_star_dist, noise_dist, noise_sigma[noise_dist]))
@@ -180,7 +180,7 @@ def adaptive_mom_cgd(funs_to_track, x0, step_size, T, steps=None, K_init=adamom_
     return tracks
 
 
-def mom_cgd(funs_to_track, x0, step_size, T, steps=None, K=mom_K):
+def mom_cgd(funs_to_track, x0, step_size, T, steps=None, K=20):
     """a function performing mom cgd, I wrote it as shortcut to track gradient error without modifying linlearn
     it is a simplified version of adaptive_mom_cgd"""
     x = x0
@@ -272,13 +272,11 @@ for rep in range(n_repeats):
 
     outputs = {}
 
-    logging.info("Running empirical, oracle and Holland gradients ...")
+    logging.info("Running algorithms ...")
 
     for gradient in [empirical_gradient, true_gradient, Holland_gradient]:
         outputs[gradient.__name__] = gradient_descent([excess_empirical_risk, excess_risk], np.zeros(n_features), gradient, step_size, T)
 
-    MOMreg_block_size = 0.05
-    logging.info("generating cgd step sizes with block size = %f ..." % MOMreg_block_size)
     MOM_regressor = MOMRegressor(tol=1e-17, max_iter=T, fit_intercept=False, strategy="mom", thresholding=mom_thresholding, step_size=step_size, block_size=MOMreg_block_size)
     MOM_regressor.fit(X, y, tracked_funs=[excess_empirical_risk, excess_risk])
 
@@ -286,13 +284,13 @@ for rep in range(n_repeats):
     #logging.info("running MOM cgd")
     #outputs["mom_cgd"] = mom_cgd([excess_empirical_risk, excess_risk], np.zeros(n_features), step_size, T, steps=MOM_regressor._steps)
 
-    logging.info("running catoni cgd")
+    #logging.info("running catoni cgd")
     catoni_regressor = MOMRegressor(tol=1e-17, max_iter=T, fit_intercept=False, strategy="catoni",
                                  thresholding=catoni_thresholding, step_size=step_size)
     catoni_regressor.fit(X, y, tracked_funs=[excess_empirical_risk, excess_risk])
     outputs["catoni_cgd"] = catoni_regressor.optimization_result_.tracked_funs
     #outputs["catoni_cgd"] = catoni_cgd_descent([excess_empirical_risk, excess_risk], np.zeros(n_features), step_size, T, steps=MOM_regressor._steps)
-    logging.info("running adaptive MOM cgd")
+    #logging.info("running adaptive MOM cgd")
     outputs["adaptive_mom_cgd"] = adaptive_mom_cgd([excess_empirical_risk, excess_risk], np.zeros(n_features), step_size, T, steps=MOM_regressor._steps)
 
     logging.info("saving repetition data ...")
@@ -316,17 +314,32 @@ if save_results:
 
     logging.info("Saved results in file %s" % filename)
 
+g = sns.FacetGrid(
+    data, col="metric", height=4, legend_out=True
+)
+g.map(
+    sns.lineplot,
+    "t",
+    "value",
+    "algo",
+    #lw=4,
+).set(yscale="log")#, xlabel="", ylabel="")
 
-estimator = "mean"
+#g.set_titles(col_template="{col_name}")
 
-sns.lineplot(data=data.query("metric == 'excess_empirical_risk'"), x="t", y="value", hue="algo", estimator=estimator).set_title("Excess Empirical Risk")
+axes = g.axes.flatten()
 
+# for i, dataset in enumerate(df["dataset"].unique()):
+#     axes[i].set_xticklabels([0, 1, 2, 5, 10, 20, 50], fontsize=14)
+#     axes[i].set_title(dataset, fontsize=18)
+
+
+plt.legend(
+    list(data["algo"].unique()),
+    #bbox_to_anchor=(0.3, 0.7, 1.0, 0.0),
+    loc="upper center",
+    #ncol=1,
+    #borderaxespad=0.0,
+    #fontsize=14,
+)
 plt.show()
-
-sns.lineplot(data=data.query("metric == 'excess_risk'"), x="t", y="value", hue="algo", estimator=estimator).set_title("Excess Risk")
-
-plt.show()
-
-# sns.lineplot(data=data.query("metric == 'gradient_error'"), x="t", y="value", hue="algo", estimator=estimator).set_title("Gradient error")
-#
-# plt.show()

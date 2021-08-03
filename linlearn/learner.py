@@ -408,8 +408,8 @@ class MOMBase(ClassifierMixin, BaseEstimator):
         w = optimization_result.w
 
         if self.fit_intercept:
-            self.intercept_ = np.array([w[:, 0]])
-            self.coef_ = w[:, 1:].copy()
+            self.intercept_ = np.array([w[0, :]])
+            self.coef_ = w[1:, :].copy()
         else:
             self.intercept_ = np.zeros(w.shape[1])
             self.coef_ = w.copy()
@@ -504,13 +504,13 @@ class BinaryClassifier(MOMBase, ClassifierMixin):
         # X = check_array(X, accept_sparse="csr")
         X = check_array(X, accept_sparse=False, estimator="BinaryClassifier")
 
-        n_features = self.coef_.shape[1]
+        n_features = self.coef_.shape[0]
         if X.shape[1] != n_features:
             raise ValueError(
                 "X has %d features per sample; expecting %d" % (X.shape[1], n_features)
             )
 
-        scores = safe_sparse_dot(X, self.coef_.T, dense_output=True) + self.intercept_
+        scores = safe_sparse_dot(X, self.coef_, dense_output=True) + self.intercept_
         return scores.ravel()
 
     def predict_proba(self, X):
@@ -672,7 +672,7 @@ class MOMRegressor(MOMBase, RegressorMixin):
                 "X has %d features per sample; expecting %d" % (X.shape[1], n_features)
             )
 
-        scores = safe_sparse_dot(X, self.coef_.T, dense_output=True) + self.intercept_
+        scores = safe_sparse_dot(X, self.coef_, dense_output=True) + self.intercept_
         return scores.ravel()
 
     def get_params(self):
@@ -760,14 +760,14 @@ class MultiClassifier(MOMBase, ClassifierMixin):
         # X = check_array(X, accept_sparse="csr")
         X = check_array(X, accept_sparse=False, estimator="MultiClassifier")
 
-        n_features = self.coef_.shape[1]
+        n_features = self.coef_.shape[0]
         if X.shape[1] != n_features:
             raise ValueError(
                 "X has %d features per sample; expecting %d" % (X.shape[1], n_features)
             )
 
-        scores = safe_sparse_dot(X, self.coef_.T, dense_output=True) + self.intercept_
-        return scores.ravel()
+        scores = safe_sparse_dot(X, self.coef_, dense_output=True) + self.intercept_
+        return scores#.ravel()
 
     def predict_proba(self, X):
         """
@@ -836,7 +836,7 @@ class MultiClassifier(MOMBase, ClassifierMixin):
             Predicted class label per sample.
         """
         # TODO: deal with threshold for predictions
-        scores = np.vstack((self.decision_function(X), np.ones(X.shape[0])))
+        scores = np.hstack((self.decision_function(X), np.ones((X.shape[0], 1))))
         indices = scores.argmax(axis=1)
         return self.classes_[indices]
 
