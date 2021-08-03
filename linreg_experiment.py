@@ -27,9 +27,9 @@ logging.info(128*"=")
 if not save_results:
     logging.info("WARNING : results will NOT be saved at the end of this session")
 
-n_repeats = 10
+n_repeats = 5#10
 
-n_samples = 500
+n_samples = 200
 n_features = 5
 
 n_outliers = 10
@@ -54,7 +54,7 @@ w_star_dist = "normal"
 noise_dist = "gaussian"
 
 step_size = 0.01
-T = 80
+T = 20
 
 logging.info("Lauching experiment with parameters : \n n_repeats = %d , n_samples = %d , n_features = %d , outliers = %r" % (n_repeats, n_samples, n_features, outliers))
 if outliers:
@@ -250,12 +250,12 @@ for rep in range(n_repeats):
         y = np.concatenate((y, 10*np.ones(n_outliers)*np.max(np.abs(y))))
 
     logging.info("generating risks and gradients ...")
-    empirical_risk = lambda w : ((X @ w - y)**2).mean()/2
+    def empirical_risk(w):
+        return ((X.dot(w) - y)**2).mean()/2
 
-    true_risk = lambda w : 0.5*(noise_2nd_moment + np.dot(mu_X, w - w_star)**2 - 2*expect_noise*np.dot(mu_X, w - w_star) + np.dot(w-w_star, Sigma_X @ (w-w_star)))
+    def true_risk(w): return 0.5*(noise_2nd_moment + np.dot(mu_X, w - w_star)**2 - 2*expect_noise*np.dot(mu_X, w - w_star) + np.dot(w-w_star, Sigma_X @ (w-w_star)))
 
-    def true_gradient(w):
-        return Sigma_X @ (w-w_star) + (-expect_noise + np.dot(mu_X, w-w_star))*mu_X
+    def true_gradient(w): return Sigma_X @ (w-w_star) + (-expect_noise + np.dot(mu_X, w-w_star))*mu_X
 
     XXT = X.T @ X
     Xy = X.T @ y
@@ -267,8 +267,8 @@ for rep in range(n_repeats):
     optimal_risk = minimize(true_risk, np.zeros(n_features), jac=true_gradient).fun
     optimal_empirical_risk = minimize(empirical_risk, np.zeros(n_features), jac=empirical_gradient).fun
 
-    excess_empirical_risk = lambda w : empirical_risk(w) - optimal_empirical_risk
-    excess_risk = lambda w : true_risk(w) - optimal_risk
+    def excess_empirical_risk(w): return empirical_risk(w.flatten()) - optimal_empirical_risk
+    def excess_risk(w): return true_risk(w.flatten()) - optimal_risk
 
     outputs = {}
 
@@ -295,7 +295,7 @@ for rep in range(n_repeats):
     logging.info("running adaptive MOM cgd")
     outputs["adaptive_mom_cgd"] = adaptive_mom_cgd([excess_empirical_risk, excess_risk], np.zeros(n_features), step_size, T, steps=MOM_regressor._steps)
 
-    logging.info("saving results ...")
+    logging.info("saving repetition data ...")
     for tt in range(T):
         for alg in outputs.keys():
             for ind_metric, metric in enumerate(metrics):

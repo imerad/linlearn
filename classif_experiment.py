@@ -116,4 +116,4 @@ col_try, col_noise, col_algo, col_val, col_n_samples = [], [], [], [], []
 mom_reg = MultiClassifier(tol=1e-17, max_iter=10, fit_intercept=False, strategy="mom",
                              thresholding=False, step_size=0.01, loss="multilogistic", penalty="none")
 
-mom_reg.fit(mnist_train_images[:100,:], mnist_train_labels[:100,:])
+mom_reg.fit(np.ascontiguousarray(mnist_train_images[:100,:]), np.ascontiguousarray(mnist_train_labels[:100,:]))

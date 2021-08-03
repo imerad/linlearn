@@ -124,10 +124,8 @@ def coordinate_gradient_descent(
     n_samples, n_features = X.shape
 
     # Computation of the initial inner products
-    ip_s2 = w.shape[1]
-    if fit_intercept:
-        ip_s2 -= 1
-    inner_products = np.empty((n_samples, ip_s2), dtype=X.dtype)
+
+    inner_products = np.empty((n_samples, w.shape[1]), dtype=X.dtype)
     # Compute the inner products X . w + b
     # TODO: decision function should be given by the strategy
     decision_function(X, fit_intercept, w, out=inner_products)
@@ -173,7 +171,7 @@ def coordinate_gradient_descent(
 
         for idx in range(w_size):
             j = coordinates[idx]
-            j = (j // w.shape[0], j % w.shape[0])
+            j = (j // w.shape[1], j % w.shape[1])
             # print("j: ", j)
             # TODO: pour integrer mom il suffit de passer aussi en argument grad_coordinate mais les protoypes sont differents...
 

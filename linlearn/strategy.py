@@ -20,8 +20,6 @@ Strategy = namedtuple("Strategy", ["grad_coordinate", "n_samples_in_block", "nam
 def decision_function(X, fit_intercept, w, out):
     if fit_intercept:
         # TODO: use out= in dot and + z[0] at the same time with parallelize ?
-        print(X.shape)
-        print(w.shape)
         out[:] = X.dot(w[1:,:]) + w[0,:]
     else:
         out[:] = X.dot(w)
@@ -144,17 +142,17 @@ def grad_coordinate_erm(loss_derivative, j, X, y, inner_products, fit_intercept)
     # TODO: sparse matrix ?
     n_samples = inner_products.shape[0]
     if fit_intercept:
-        if j == 0:
+        if j[0] == 0:
             # In this case it's the derivative w.r.t the intercept
             for i in range(n_samples):
-                grad += loss_derivative(y[i], inner_products[i])
+                grad += loss_derivative(y[i], inner_products[i], j[1])
         else:
             for i in range(n_samples):
-                grad += loss_derivative(y[i], inner_products[i]) * X[i, j - 1]
+                grad += loss_derivative(y[i], inner_products[i], j[1]) * X[i, j[0] - 1]
     else:
         # There is no intercept
         for i in range(n_samples):
-            grad += loss_derivative(y[i], inner_products[i]) * X[i, j]
+            grad += loss_derivative(y[i], inner_products[i], j[1]) * X[i, j[0]]
     return grad / n_samples
 
 
@@ -206,6 +204,7 @@ def grad_coordinate_mom(
     # Block counter
     n_block = 0
 
+    #print(j)
     if fit_intercept:
         if j[0] == 0:
             # In this case it's the derivative w.r.t the intercept
@@ -213,7 +212,7 @@ def grad_coordinate_mom(
                 i = idx_samples[idx]
                 # Update current sum in the block
                 # print(sum_block, "+=", x[i])
-                grad_block += loss_derivative(y[i], inner_products[i])
+                grad_block += loss_derivative(y[i], inner_products[i], j[1])
                 # sum_block += x[i]
                 if (i != 0) and ((i + 1) % n_samples_in_block == 0):
                     # It's the end of the block, we need to save its mean
@@ -232,7 +231,7 @@ def grad_coordinate_mom(
                 i = idx_samples[idx]
                 # Update current sum in the block
                 # print(sum_block, "+=", x[i])
-                grad_block += loss_derivative(y[i], inner_products[i]) * X[i, j[0] - 1]
+                grad_block += loss_derivative(y[i], inner_products[i], j[1]) * X[i, j[0] - 1]
                 # sum_block += x[i]
                 if (i != 0) and ((i + 1) % n_samples_in_block == 0):
                     # It's the end of the block, we need to save its mean
@@ -252,7 +251,7 @@ def grad_coordinate_mom(
             i = idx_samples[idx]
             # Update current sum in the block
             # print(sum_block, "+=", x[i])
-            grad_block += loss_derivative(y[i], inner_products[i]) * X[i, j[0]]
+            grad_block += loss_derivative(y[i], inner_products[i], j[1]) * X[i, j[0]]
             # sum_block += x[i]
             if (i != 0) and ((i + 1) % n_samples_in_block == 0):
                 # It's the end of the block, we need to save its mean
@@ -310,19 +309,19 @@ def grad_coordinate_catoni(
     place_holder = np.empty(n_samples, dtype=X.dtype)
 
     if fit_intercept:
-        if j == 0:
+        if j[0] == 0:
             # In this case it's the derivative w.r.t the intercept
             for idx in range(n_samples):
-                place_holder[idx] = loss_derivative(y[idx], inner_products[idx])
+                place_holder[idx] = loss_derivative(y[idx], inner_products[idx], j[1])
 
         else:
             for idx in range(n_samples):
-                place_holder[idx] = loss_derivative(y[idx], inner_products[idx]) * X[idx, j - 1]
+                place_holder[idx] = loss_derivative(y[idx], inner_products[idx], j[1]) * X[idx, j[0] - 1]
 
     else:
         # There is no intercept
         for idx in range(n_samples):
-            place_holder[idx] = loss_derivative(y[idx], inner_products[idx]) * X[idx, j]
+            place_holder[idx] = loss_derivative(y[idx], inner_products[idx], j[1]) * X[idx, j[0]]
 
         return Holland_catoni_estimator(place_holder)
 

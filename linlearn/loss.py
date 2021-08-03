@@ -137,12 +137,26 @@ def logsumexp(z):
     zmax = np.max(z)
     return zmax + np.log(np.exp(z - zmax).sum())
 
+@njit
+def logsumexp1(z):
+    zmax = max(0, np.max(z))
+    return zmax + np.log(1 + np.exp(z - zmax).sum())
+
+@njit
+def softmax1(z, j):
+    zmax = max(0, np.max(z))
+    expzmax = np.exp(-zmax)
+    if j == len(z):
+        return expzmax / (expzmax + np.exp(z - zmax).sum())
+    else:
+        return np.exp(z[j] - zmax) / (expzmax + np.exp(z - zmax).sum())
+
 # TODO: faster logistic
 
 
 @njit(fastmath=True, inline="always")
 def logistic_value_single(y, z):
-    s = y * z
+    s = y * z[0]
     if s > 0:
         return log(1 + exp(-s))
     else:
@@ -151,12 +165,12 @@ def logistic_value_single(y, z):
 
 @njit
 def logistic_value_batch(y, z):
-    return loss_value_batch(logistic_value_single, y, z)
+    return loss_value_batch(logistic_value_single, y, z[:, 0])
 
 
 @njit
-def logistic_derivative(y, z):
-    return -y * sigmoid(-y * z)
+def logistic_derivative(y, z, j1=0):
+    return -y * sigmoid(-y * z[j1])
 
 
 @njit
@@ -182,18 +196,15 @@ def multilogistic_value_single(y, z):
 
 @njit
 def multilogistic_value_batch(y, z):
-    z0 = np.hstack((z, np.zeros((z.shape[0], 1), dtype=z.dtype)))
-    for i in range(z0.shape[0]):
-        exponentiated = np.exp(z0[i] - np.max(z0[i]))#, keepdims=True))
-        normalized = exponentiated/exponentiated.sum()
-        z0[i,:] = normalized
-    return - np.log(z0[:,y])
+    return loss_value_batch(multilogistic_value_single, y, z)
 
 
 @njit
-def multilogistic_derivative(y, z):
-    z0 = np.concatenate((z, np.zeros(1, dtype=z.dtype)))
-    return -z0[y] + logsumexp(z0)
+def multilogistic_derivative(y, z, j1):
+    if y == j1:
+        return softmax1(z, j1) - 1
+    else:
+        return softmax1(z, j1)
 
 
 @njit
@@ -212,17 +223,17 @@ def multilogisic_factory():
 
 @njit(fastmath=True, inline="always")
 def leastsquares_value_single(y, z):
-    return 0.5*(y-z)**2
+    return 0.5*(y-z[0])**2
 
 
 @njit
 def leastsquares_value_batch(y, z):
-    return 0.5*((y-z)**2).mean()
+    return 0.5*((y-z.flatten())**2).mean()
 
 
 @njit
-def leastsquares_derivative(y, z):
-    return z-y
+def leastsquares_derivative(y, z, j1=0):
+    return z[j1]-y
 
 
 @njit

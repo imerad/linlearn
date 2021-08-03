@@ -411,7 +411,7 @@ class MOMBase(ClassifierMixin, BaseEstimator):
             self.intercept_ = np.array([w[:, 0]])
             self.coef_ = w[:, 1:].copy()
         else:
-            self.intercept_ = np.zeros(len(self.classes_)-1)
+            self.intercept_ = np.zeros(w.shape[1])
             self.coef_ = w.copy()
 
         return self
@@ -419,10 +419,14 @@ class MOMBase(ClassifierMixin, BaseEstimator):
     def _get_initial_iterate(self, X, y):
         # Deal with warm-starting here
         n_samples, n_features = X.shape
-        if self.fit_intercept:
-            w = np.zeros((n_features + 1, len(self.classes_)-1), dtype=X.dtype)
+        if self.__class__.__name__ not in ["BinaryClassifier", "MultiClassifier"]:
+            dim2 = 1
         else:
-            w = np.zeros((n_features, len(self.classes_)-1), dtype=X.dtype)
+            dim2 = len(self.classes_)-1
+        if self.fit_intercept:
+            w = np.zeros((n_features + 1, dim2), dtype=X.dtype)
+        else:
+            w = np.zeros((n_features, dim2), dtype=X.dtype)
         return w
 
 
