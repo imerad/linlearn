@@ -10,6 +10,7 @@ from collections import namedtuple
 
 from .strategy import grad_coordinate_erm, decision_function
 from .penalty import l1_apply_single
+from .catoni import estimate_sigma
 
 # TODO: good default for tol when using duality gap
 # TODO: step=float or {'best', 'auto'}
@@ -123,7 +124,10 @@ def coordinate_gradient_descent(
     n_samples, n_features = X.shape
 
     # Computation of the initial inner products
-    inner_products = np.empty(n_samples, dtype=X.dtype)
+    ip_s2 = w.shape[1]
+    if fit_intercept:
+        ip_s2 -= 1
+    inner_products = np.empty((n_samples, ip_s2), dtype=X.dtype)
     # Compute the inner products X . w + b
     # TODO: decision function should be given by the strategy
     decision_function(X, fit_intercept, w, out=inner_products)
@@ -134,7 +138,7 @@ def coordinate_gradient_descent(
     penalty_value = penalty.value
     penalty_apply_single = penalty.apply_single
 
-    w_size = w.shape[0]
+    w_size = w.shape[0]*w.shape[1]
 
     if tracked_funs:
         tracks = [np.ones(max_iter) for i in range(len(tracked_funs))]
@@ -147,7 +151,7 @@ def coordinate_gradient_descent(
         obj = loss_value_batch(y, inner_products)
         if fit_intercept:
             # obj += penalty_value(w[1:], penalty_strength)
-            obj += penalty_value(w[1:])
+            obj += penalty_value(w[1:,:])
         else:
             # obj += penalty_value(w, penalty_strength)
             obj += penalty_value(w)
@@ -169,6 +173,7 @@ def coordinate_gradient_descent(
 
         for idx in range(w_size):
             j = coordinates[idx]
+            j = (j // w.shape[0], j % w.shape[0])
             # print("j: ", j)
             # TODO: pour integrer mom il suffit de passer aussi en argument grad_coordinate mais les protoypes sont differents...
 
@@ -177,13 +182,13 @@ def coordinate_gradient_descent(
             if thresholding:# and cycle > 20:
                 grad_j = l1_apply_single(grad_j, thresholds[j])
 
-            if fit_intercept and j == 0:
+            if fit_intercept and j[0] == 0:
                 # It's the intercept, so we don't penalize
-                w_j_new = w[j] - steps[j] * grad_j
+                w_j_new = w[j] - steps[j[0]] * grad_j
             else:
                 # It's not the intercept
-                w_j_new = w[j] - steps[j] * grad_j
-                w_j_new = penalty_apply_single(w_j_new, steps[j])
+                w_j_new = w[j] - steps[j[0]] * grad_j
+                w_j_new = penalty_apply_single(w_j_new, steps[j[0]])
 
             # print("w[j]: ", w[j], "w_j_new: ", w_j_new)
             # Update the inner products
@@ -200,15 +205,15 @@ def coordinate_gradient_descent(
                 max_abs_weight = abs_w_j_new
 
             if fit_intercept:
-                if j == 0:
+                if j[0] == 0:
                     for i in range(n_samples):
-                        inner_products[i] += delta_j
+                        inner_products[i, j[1]] += delta_j
                 else:
                     for i in range(n_samples):
-                        inner_products[i] += delta_j * X[i, j - 1]
+                        inner_products[i, j[1]] += delta_j * X[i, j[0] - 1]
             else:
                 for i in range(n_samples):
-                    inner_products[i] += delta_j * X[i, j]
+                    inner_products[i] += delta_j * X[i, j[0]]
             w[j] = w_j_new
 
         # print("max_abs_delta, max_abs_weight: ", max_abs_delta, max_abs_weight)
@@ -216,18 +221,24 @@ def coordinate_gradient_descent(
 
     # Value of the objective at initialization
     obj = objective(w)
-    w_size = w.shape[0]
+    w_size = w.shape[0]*w.shape[1]
 
     # TODO: First value for tolerance is 1.0 or NaN
     history.update(epoch=0, obj=obj, tol=1.0, update_bar=False)
 
 
     def compute_thresholds():
-        variances = estimate_grad_coord_variances(loss, X, y, w, fit_intercept, inner_products, strategy.n_samples_in_block)
-        return np.sqrt(variances * (np.log(n_features*max_iter)/n_samples + 1/(8*strategy.n_samples_in_block)))/3 #
+        if strategy.name == "mom":
+            variances = estimate_grad_coord_variances_mom(loss, X, y, w, fit_intercept, inner_products,
+                                                      strategy.n_samples_in_block)
+            return np.sqrt(
+                variances * (np.log(n_features * max_iter) / n_samples + 1 / (8 * strategy.n_samples_in_block)))/5  #
+        else:#catoni
+            variances = estimate_grad_coord_variances_catoni(loss, X, y, w, fit_intercept, inner_products)
+            return variances * np.sqrt(np.log(n_features*max_iter)/n_samples)/5 #
 
 
-    thresholds = compute_thresholds() if thresholding else None
+    thresholds = compute_thresholds() if thresholding and strategy.name!="erm" else None
 
     for cycle in range(1, max_iter + 1):
         # Sample a permutation of the coordinates
@@ -358,7 +369,7 @@ def coordinate_gradient_descent_factory():
 solvers_factory = {"cgd": coordinate_gradient_descent_factory}
 
 
-def estimate_grad_coord_variances(loss, X, y, w, fit_intercept, inner_products, n_samples_in_block):
+def estimate_grad_coord_variances_mom(loss, X, y, w, fit_intercept, inner_products, n_samples_in_block):
 
     variances = np.empty_like(w)
     loss_derivative = loss.derivative
@@ -421,6 +432,30 @@ def estimate_grad_coord_variances(loss, X, y, w, fit_intercept, inner_products, 
 
     return variances
 
+
+
+def estimate_grad_coord_variances_catoni(loss, X, y, w, fit_intercept, inner_products):
+
+    variances = np.empty_like(w)
+    loss_derivative = loss.derivative
+
+    n_samples = inner_products.shape[0]
+
+    grads = np.empty((n_samples, len(w)), dtype=X.dtype)
+
+    for i in range(n_samples):
+        if fit_intercept:
+            grads[i, 0] = loss_derivative(y[i], inner_products[i])
+            # print(grads[1:].shape, X[i, :].shape)
+            grads[i, 1:] = grads[i, 0] * X[i, :]
+        else:
+            grads[i,:] = loss_derivative(y[i], inner_products[i]) * X[i, :]
+
+    for j in range(len(w)):
+
+        variances[j] = estimate_sigma(grads[:, j])
+
+    return variances
 
 # Dans SAG critere d'arret :
 # if status == -1:

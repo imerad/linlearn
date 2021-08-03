@@ -12,7 +12,7 @@ import numpy as np
 from scipy.special import expit
 
 from sklearn.base import ClassifierMixin, RegressorMixin, BaseEstimator
-from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import LabelEncoder, normalize
 from sklearn.utils import check_array, check_consistent_length
 from sklearn.utils.multiclass import type_of_target
 from sklearn.utils.validation import check_is_fitted
@@ -254,7 +254,7 @@ class MOMBase(ClassifierMixin, BaseEstimator):
         if self.solver == "cgd":
             # Get the gradient descent steps for each coordinate
             self._steps = steps_coordinate_descent(loss.lip, X, n_samples_in_block, self.fit_intercept)
-            steps = self.step_size * steps_coordinate_descent(loss.lip, X, n_samples_in_block, self.fit_intercept)
+            steps = self.step_size * self._steps
             self.history_ = History("CGD", self.max_iter, self.verbose)
 
             def solve(w, tracked_funs=None):
@@ -319,7 +319,7 @@ class MOMBase(ClassifierMixin, BaseEstimator):
             accept_large_sparse = False
 
         estimator_name = self.__class__.__name__
-        is_classifier = estimator_name == "BinaryClassifier"
+        is_classifier = estimator_name in ["BinaryClassifier", "MultiClassifier"]
 
         X = check_array(
             X,
@@ -334,17 +334,21 @@ class MOMBase(ClassifierMixin, BaseEstimator):
             check_consistent_length(X, y)
             # Ensure that the label type is binary
             y_type = type_of_target(y)
-            if y_type != "binary":
+            if y_type not in ["binary", "multiclass", "multilabel-indicator"]:
                 raise ValueError("Unknown label type: %r" % y_type)
-
             # TODO: random_state = check_random_state(random_state)
             # This replaces the target modalities by elements in {0, 1}
             le = LabelEncoder()
-            y_encoded = le.fit_transform(y)
+            if y_type =="multilabel-indicator":
+                y_encoded = le.fit_transform(np.argmax(y, axis=1))
+            else:
+                y_encoded = le.fit_transform(y)
             # Keep track of the classes
             self.classes_ = le.classes_
-            # We need to put the targets in {-1, 1}
-            y_encoded[y_encoded == 0] = -1.0
+            if y_type == "binary":
+                # We need to put the targets in {-1, 1}
+                y_encoded[y_encoded == 0] = -1.0
+
         else:
             y = check_array(y, ensure_2d=False, dtype="numeric", estimator=estimator_name)
             check_consistent_length(X, y)
@@ -404,11 +408,11 @@ class MOMBase(ClassifierMixin, BaseEstimator):
         w = optimization_result.w
 
         if self.fit_intercept:
-            self.intercept_ = np.array([w[0]])
-            self.coef_ = w[np.newaxis, 1:].copy()
+            self.intercept_ = np.array([w[:, 0]])
+            self.coef_ = w[:, 1:].copy()
         else:
-            self.intercept_ = np.zeros(1)
-            self.coef_ = w[np.newaxis, :].copy()
+            self.intercept_ = np.zeros(len(self.classes_)-1)
+            self.coef_ = w.copy()
 
         return self
 
@@ -416,9 +420,9 @@ class MOMBase(ClassifierMixin, BaseEstimator):
         # Deal with warm-starting here
         n_samples, n_features = X.shape
         if self.fit_intercept:
-            w = np.zeros(n_features + 1)
+            w = np.zeros((n_features + 1, len(self.classes_)-1), dtype=X.dtype)
         else:
-            w = np.zeros(n_features)
+            w = np.zeros((n_features, len(self.classes_)-1), dtype=X.dtype)
         return w
 
 
@@ -676,4 +680,188 @@ class MOMRegressor(MOMBase, RegressorMixin):
         from sklearn.metrics import mean_squared_error
 
         return mean_squared_error(y, self.predict(X), sample_weight=sample_weight)/2
+
+
+class MultiClassifier(MOMBase, ClassifierMixin):
+
+    def __init__(
+        self,
+        *,
+        penalty="l2",
+        C=1.0,
+        step_size=1.0,
+        loss="logistic",
+        fit_intercept=True,
+        strategy="erm",
+        block_size=0.07,
+        solver="cgd",
+        tol=1e-4,
+        max_iter=100,
+        class_weight=None,
+        random_state=None,
+        verbose=0,
+        warm_start=False,
+        n_jobs=None,
+        l1_ratio=0.5,
+        thresholding=False
+    ):
+        super(MultiClassifier, self).__init__(
+            penalty=penalty,
+            C=C,
+            step_size=step_size,
+            loss=loss,
+            fit_intercept=fit_intercept,
+            strategy=strategy,
+            block_size=block_size,
+            solver=solver,
+            tol=tol,
+            max_iter=max_iter,
+            random_state=random_state,
+            verbose=verbose,
+            warm_start=warm_start,
+            n_jobs=n_jobs,
+            l1_ratio=l1_ratio,
+            thresholding=thresholding
+        )
+
+        self.class_weight = class_weight
+        self.classes_ = None
+
+    # TODO: properties for class_weight=None, random_state=None, verbose=0, warm_start=False, n_jobs=None
+
+
+    def decision_function(self, X):
+        """
+        Predict confidence scores for samples.
+
+        The confidence score for a sample is the signed distance of that
+        sample to the hyperplane.
+
+        Parameters
+        ----------
+        X : array-like or sparse matrix, shape (n_samples, n_features)
+            Samples.
+
+        Returns
+        -------
+        array, shape=(n_samples,) if n_classes == 2 else (n_samples, n_classes)
+            Confidence scores per (sample, class) combination. In the binary
+            case, confidence score for self.classes_[1] where >0 means this
+            class would be predicted.
+        """
+        # TODO: this is from scikit-learn, cite and put authors
+        check_is_fitted(self)
+
+        # For now, no sparse arrays
+        # X = check_array(X, accept_sparse="csr")
+        X = check_array(X, accept_sparse=False, estimator="MultiClassifier")
+
+        n_features = self.coef_.shape[1]
+        if X.shape[1] != n_features:
+            raise ValueError(
+                "X has %d features per sample; expecting %d" % (X.shape[1], n_features)
+            )
+
+        scores = safe_sparse_dot(X, self.coef_.T, dense_output=True) + self.intercept_
+        return scores.ravel()
+
+    def predict_proba(self, X):
+        """
+        Probability estimates.
+
+        The returned estimates for all classes are ordered by the
+        label of classes.
+
+        For a multi_class problem, if multi_class is set to be "multinomial"
+        the softmax function is used to find the predicted probability of
+        each class.
+        Else use a one-vs-rest approach, i.e calculate the probability
+        of each class assuming it to be positive using the logistic function.
+        and normalize these values across all the classes.
+
+        Parameters
+        ----------
+        X : array-like of shape (n_samples, n_features)
+            Vector to be scored, where `n_samples` is the number of samples and
+            `n_features` is the number of features.
+
+        Returns
+        -------
+        T : array-like of shape (n_samples, n_classes)
+            Returns the probability of the sample for each class in the model,
+            where classes are ordered as they are in ``self.classes_``.
+        """
+        check_is_fitted(self)
+        prob = self.decision_function(X)
+        np.exp(prob, out=prob)
+        return normalize(np.vstack([prob, np.ones(X.shape[0])]), norm='l1', axis=1).T
+
+    def predict_log_proba(self, X):
+        """
+        Predict logarithm of probability estimates.
+
+        The returned estimates for all classes are ordered by the
+        label of classes.
+
+        Parameters
+        ----------
+        X : array-like of shape (n_samples, n_features)
+            Vector to be scored, where `n_samples` is the number of samples and
+            `n_features` is the number of features.
+
+        Returns
+        -------
+        T : array-like of shape (n_samples, n_classes)
+            Returns the log-probability of the sample for each class in the
+            model, where classes are ordered as they are in ``self.classes_``.
+        """
+        return np.log(self.predict_proba(X))
+
+    def predict(self, X):
+        """
+        Predict class labels for samples in X.
+
+        Parameters
+        ----------
+        X : array-like or sparse matrix, shape (n_samples, n_features)
+            Samples.
+
+        Returns
+        -------
+        C : array, shape [n_samples]
+            Predicted class label per sample.
+        """
+        # TODO: deal with threshold for predictions
+        scores = np.vstack((self.decision_function(X), np.ones(X.shape[0])))
+        indices = scores.argmax(axis=1)
+        return self.classes_[indices]
+
+    def score(self, X, y, sample_weight=None):
+        """
+        Return the mean accuracy on the given test data and labels.
+
+        In multi-label classification, this is the subset accuracy
+        which is a harsh metric since you require for each sample that
+        each label set be correctly predicted.
+
+        Parameters
+        ----------
+        X : array-like of shape (n_samples, n_features)
+            Test samples.
+
+        y : array-like of shape (n_samples,) or (n_samples, n_outputs)
+            True labels for `X`.
+
+        sample_weight : array-like of shape (n_samples,), default=None
+            Sample weights.
+
+        Returns
+        -------
+        score : float
+            Mean accuracy of ``self.predict(X)`` wrt. `y`.
+        """
+        from sklearn.metrics import accuracy_score
+
+        return accuracy_score(y, self.predict(X), sample_weight=sample_weight)
+
 

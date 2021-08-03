@@ -132,6 +132,10 @@ def sigmoid(z):
         exp_z = exp(z)
         return exp_z / (1 + exp_z)
 
+@njit
+def logsumexp(z):
+    zmax = np.max(z)
+    return zmax + np.log(np.exp(z - zmax).sum())
 
 # TODO: faster logistic
 
@@ -170,6 +174,43 @@ def logisic_factory():
 
 
 @njit(fastmath=True, inline="always")
+def multilogistic_value_single(y, z):
+    z0 = np.concatenate((z, np.array([0])))
+    exponentiated = np.exp(z0 - np.max(z0))
+    normalized = exponentiated/exponentiated.sum()
+    return - log(normalized[y])
+
+@njit
+def multilogistic_value_batch(y, z):
+    z0 = np.hstack((z, np.zeros((z.shape[0], 1), dtype=z.dtype)))
+    for i in range(z0.shape[0]):
+        exponentiated = np.exp(z0[i] - np.max(z0[i]))#, keepdims=True))
+        normalized = exponentiated/exponentiated.sum()
+        z0[i,:] = normalized
+    return - np.log(z0[:,y])
+
+
+@njit
+def multilogistic_derivative(y, z):
+    z0 = np.concatenate((z, np.zeros(1, dtype=z.dtype)))
+    return -z0[y] + logsumexp(z0)
+
+
+@njit
+def multilogistic_lip():
+    return 0.25
+
+
+def multilogisic_factory():
+    return Loss(
+        value_single=multilogistic_value_single,
+        value_batch=multilogistic_value_batch,
+        derivative=multilogistic_derivative,
+        lip=multilogistic_lip,
+    )
+
+
+@njit(fastmath=True, inline="always")
 def leastsquares_value_single(y, z):
     return 0.5*(y-z)**2
 
@@ -198,7 +239,7 @@ def leastsquares_factory():
     )
 
 
-losses_factory = {"logistic": logisic_factory, "leastsquares": leastsquares_factory}
+losses_factory = {"multilogistic": multilogisic_factory, "logistic": logisic_factory, "leastsquares": leastsquares_factory}
 
 # y = np.random.randn(100)
 # z = np.random.randn(100)

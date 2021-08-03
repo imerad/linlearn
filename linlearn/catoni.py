@@ -1,29 +1,41 @@
 import numpy as np
+from numba import njit, vectorize, float64
+
+#@njit
+@vectorize([float64(float64)])
+def catoni(x):
+    return np.sign(x)*np.log(1 + np.sign(x)*x + x*x/2)# if x > 0 else -np.log(1 - x + x*x/2)
+
+#@njit
+@vectorize([float64(float64)])
+def khi(x):
+    return 1 - 0.34 - 1/(1 + x*x)#np.log(0.5 + x*x)#
+
+#@njit
+@vectorize([float64(float64)])
+def gud(x):
+    return 2*np.arctan(np.exp(x)) - np.pi/2 if x < 10 else np.pi/2
 
 
-catoni = np.frompyfunc(lambda x : np.log(1 + x + x*x/2) if x > 0 else -np.log(1 - x + x*x/2), 1, 1)
-khi = np.frompyfunc(lambda x : 1 - 0.34 - 1/(1 + x*x), 1, 1)
-gud = np.frompyfunc(lambda x : 2*np.arctan(np.exp(x)) - np.pi/2 if x < 10 else np.pi/2, 1, 1)
-
-
+@njit
 def estimate_sigma(x, eps=0.001):
     sigma = 1
-    array = np.array(x)
-    avg = array.mean()
+    ar = x#np.array(x)
+    avg = ar.mean()
     diff = 1
     khi0 = khi(0)
     niter = 0
     while diff > eps:
-        tmp = sigma * np.sqrt(1 - (khi((array - avg)/sigma)).mean()/khi0)
+        tmp = sigma * np.sqrt(1 - (khi((ar - avg)/sigma)).mean()/khi0)
         diff = np.abs(tmp - sigma)
         sigma = tmp
         niter += 1
     #print(niter)
     return sigma
 
-
+@njit
 def Holland_catoni_estimator(x, eps=0.001):
-    s = estimate_sigma(x)
+    s = estimate_sigma(x)*np.sqrt(len(x)/np.log(1/eps))
     m = 0
     diff = 1
     niter = 0
