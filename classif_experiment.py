@@ -9,6 +9,12 @@ import sys
 import seaborn as sns
 import matplotlib.pyplot as plt
 import pandas as pd
+from scipy.special import logsumexp, softmax
+
+from tick.linear_model import ModelLogReg
+from tick.solver import SVRG
+from tick.prox import ProxL1
+from tick.plot import plot_history
 
 # file_handler = logging.FileHandler(filename='exp_archives/classif_exp.log')
 # stdout_handler = logging.StreamHandler(sys.stdout)
@@ -65,6 +71,7 @@ mnist_test_labels = _labels(mnist_test_labels_file)
 
 
 save_results = False
+max_iter = 150
 
 logging.info(128*"=")
 logging.info("Running new experiment session")
@@ -77,6 +84,32 @@ n_repeats = 10
 
 def MOM_classifier():
     pass
+
+
+def SVRG(X, y, obj, grad, w0, step, m, T):
+    w_tilde = w0
+    wt = w0
+    track_objective = [obj(X, y, w0)]
+    for i in range(T//m):
+        mu = grad(X, y, w_tilde)
+        for j in range(m):
+            ind = np.random.randint(X.shape[0])
+            wt -= step*(grad(X[ind:ind+1,:], y[ind:ind+1,:], wt) - grad(X[ind:ind+1,:], y[ind:ind+1,:], w_tilde) + mu)
+            track_objective.append(obj(X, y, wt))
+        w_tilde = wt
+    return w_tilde, track_objective
+
+def objective(X, y, w, fit_intercept=False):
+    scores = X @ w[1:,:] + w[0,:] if fit_intercept else X @ w
+    scores = np.hstack((scores, np.zeros((X.shape[0], 1))))
+    obj = (-scores[np.arange(X.shape[0]), np.argmax(y, axis=1)] + logsumexp(scores, axis=1)).mean()
+    return obj
+
+def gradient(X, y, w):
+    scores = X @ w # X @ w[1:,:] + w[0,:]
+    scores = np.hstack((scores, np.zeros((X.shape[0], 1))))
+    sftmax = softmax(scores, axis=1) - np.hstack((y, np.zeros(X.shape[0])))
+    return (X.T @ sftmax[:,:-1])/X.shape[0] # np.vstack((np.ones((X.shape[0], 1)) @ sftmax[:,:-1], X.T @ sftmax[:,:-1]
 
 algorithms = [MOM_classifier]
 
@@ -113,16 +146,35 @@ col_try, col_noise, col_algo, col_val, col_n_samples = [], [], [], [], []
 #
 #     logging.info("Saved results in file %s" % filename)
 
-mom_reg = MultiClassifier(tol=1e-17, max_iter=150, fit_intercept=False, strategy="mom",
+mom_reg = MultiClassifier(tol=1e-17, max_iter=max_iter, strategy="mom",
                              thresholding=False, step_size=0.1, loss="multilogistic", penalty="none")
 
-n_samples = 5000
+n_samples = 100
+X = mnist_train_images[:n_samples,:]
+y = mnist_train_labels[:n_samples,:]
 
-mom_reg.fit(np.ascontiguousarray(mnist_train_images[:n_samples,:]), np.ascontiguousarray(mnist_train_labels[:n_samples,:]))
-pred = mom_reg.predict(mnist_train_images[:n_samples,:])
+mom_reg.fit(X, y)
+mom_pred = mom_reg.predict(mnist_train_images[:n_samples,:])
+
+
+#############################@
+model = ModelLogReg(fit_intercept=False).fit(X, np.argmax(y, axis=1))
+#prox = ProxElasticNet(strength=1e-3, ratio=0.5, range=(0, X.shape[1]))
+
+solver_params = {'max_iter': max_iter, 'tol': 0., 'verbose': True}
+x0 = np.zeros(model.n_coeffs)
+print(model.n_coeffs)
+prox = ProxL1(strength=0.001)
+svrg = SVRG(**solver_params).set_model(model).set_prox(prox)
+svrg.solve(x0, step=1 / model.get_lip_max())
+
+#print(svrg.solution.shape)
+#plot_history([svrg], log_scale=True, dist_min=True)
+
 
 correct = 0
-for i in range(n_samples):
-    if pred[i] == np.argmax(mnist_train_labels[i, :]):
-        correct += 1
-print(correct/n_samples)
+# for i in range(n_samples):
+#     if pred[i] == np.argmax(mnist_train_labels[i, :]):
+#         correct += 1
+# print("mom accuracy : %f" % (correct/n_samples))
+svrg_pred = np.argmax(X.dot(svrg.solution), axis=1)

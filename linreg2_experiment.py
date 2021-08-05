@@ -269,9 +269,9 @@ algorithms = [ERM, LAD_regression, minsker_regression, Hsu_Sabato_regression, ad
 for rep in range(n_repeats):
     if not save_results:
         logging.info("WARNING : results will NOT be saved at the end of this session")
-    logging.info(128*'-')
+    logging.info(64*'-')
     logging.info("repeat : %d" % (rep+1))
-    logging.info(128*'-')
+    logging.info(64*'-')
 
     for n_samples_train in train_sample_sizes:
         logging.info("Sample size %d ..." % n_samples_train)

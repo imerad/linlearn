@@ -140,7 +140,7 @@ def logsumexp(z):
 @njit
 def logsumexp1(z):
     zmax = max(0, np.max(z))
-    return zmax + np.log(1 + np.exp(z - zmax).sum())
+    return zmax + np.log(np.exp(-zmax) + np.exp(z - zmax).sum())
 
 @njit
 def softmax1(z, j):

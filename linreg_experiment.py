@@ -37,11 +37,11 @@ outliers = False
 
 mom_thresholding = True
 mom_thresholding = False
-MOMreg_block_size = 0.02
+MOMreg_block_size = 0.07
 adamom_K_init = 20
 
 catoni_thresholding = True
-catoni_thresholding = False
+#catoni_thresholding = False
 
 random_seed = 43
 
@@ -50,11 +50,11 @@ noise_sigma = {"gaussian": 20, "lognormal": 1.75, "pareto": 10}
 Sigma_X = np.diag(np.arange(1, n_features+1))
 mu_X = np.ones(n_features)
 
-w_star_dist = "normal"
-noise_dist = "lognormal"
+w_star_dist = "uniform"
+noise_dist = "gaussian"
 
 step_size = 0.01
-T = 60
+T = 120
 
 logging.info("Lauching experiment with parameters : \n n_repeats = %d , n_samples = %d , n_features = %d , outliers = %r" % (n_repeats, n_samples, n_features, outliers))
 if outliers:
@@ -234,9 +234,9 @@ for rep in range(n_repeats):
     if not save_results:
         logging.info("WARNING : results will NOT be saved at the end of this session")
 
-    logging.info(128*'-')
+    logging.info(64*'-')
     logging.info("repeat : %d" % (rep+1))
-    logging.info(128*'-')
+    logging.info(64*'-')
 
     logging.info("generating data ...")
     X = rng.multivariate_normal(mu_X, Sigma_X, size=n_samples)
@@ -323,7 +323,7 @@ g.map(
     "value",
     "algo",
     #lw=4,
-).set(yscale="log")#, xlabel="", ylabel="")
+)#.set(yscale="log")#, xlabel="", ylabel="")
 
 #g.set_titles(col_template="{col_name}")
 

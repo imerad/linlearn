@@ -182,15 +182,15 @@ def coordinate_gradient_descent(
 
             if fit_intercept and j[0] == 0:
                 # It's the intercept, so we don't penalize
-                w_j_new = w[j] - steps[j[0]] * grad_j
+                w_j_new = w[j[0], j[1]] - steps[j[0]] * grad_j
             else:
                 # It's not the intercept
-                w_j_new = w[j] - steps[j[0]] * grad_j
+                w_j_new = w[j[0], j[1]] - steps[j[0]] * grad_j
                 w_j_new = penalty_apply_single(w_j_new, steps[j[0]])
 
             # print("w[j]: ", w[j], "w_j_new: ", w_j_new)
             # Update the inner products
-            delta_j = w_j_new - w[j]
+            delta_j = w_j_new - w[j[0], j[1]]
 
             # Update the maximum update change
             abs_delta_j = fabs(delta_j)
@@ -212,7 +212,7 @@ def coordinate_gradient_descent(
             else:
                 for i in range(n_samples):
                     inner_products[i] += delta_j * X[i, j[0]]
-            w[j] = w_j_new
+            w[j[0], j[1]] = w_j_new
 
         # print("max_abs_delta, max_abs_weight: ", max_abs_delta, max_abs_weight)
         return max_abs_delta, max_abs_weight
