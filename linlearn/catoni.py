@@ -55,6 +55,8 @@ def Holland_catoni_estimator(x, eps=0.001):
 from scipy.optimize import brentq
 
 def standard_catoni_estimator(x, eps=0.001):
+    if (np.abs(x[0] - x) <= ((1e-8) + (1e-5) * np.abs(x[0]))).all():
+        return x[0]
     s = estimate_sigma(x)
     res = brentq(lambda u : s * catoni((x - u)/s).mean(), np.min(x), np.max(x))
     return res
