@@ -408,8 +408,8 @@ class MOMBase(ClassifierMixin, BaseEstimator):
         w = optimization_result.w
 
         if self.fit_intercept:
-            self.intercept_ = np.array([w[0, :]])
-            self.coef_ = w[1:, :].copy()
+            self.intercept_ = w[0].copy()
+            self.coef_ = w[1].copy()
         else:
             self.intercept_ = np.zeros(w.shape[1])
             self.coef_ = w.copy()
@@ -424,9 +424,9 @@ class MOMBase(ClassifierMixin, BaseEstimator):
         else:
             dim2 = len(self.classes_)-1
         if self.fit_intercept:
-            w = np.zeros((n_features + 1, dim2), dtype=X.dtype)
+            w = (np.zeros((1, dim2), dtype=X.dtype), np.zeros((n_features, dim2), dtype=X.dtype, order='F'))
         else:
-            w = np.zeros((n_features, dim2), dtype=X.dtype)
+            w = np.zeros((n_features, dim2), dtype=X.dtype, order='F')
         return w
 
 

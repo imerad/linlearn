@@ -14,7 +14,7 @@ def khi(x):
 #@njit
 @vectorize([float64(float64)])
 def gud(x):
-    return 2*np.arctan(np.exp(x)) - np.pi/2 if x < 10 else np.pi/2
+    return 2*np.arctan(np.exp(x)) - np.pi/2 if x < 12 else np.pi/2
 
 
 @njit
@@ -35,6 +35,11 @@ def estimate_sigma(x, eps=0.001):
 
 @njit
 def Holland_catoni_estimator(x, eps=0.001):
+    #if the array is constant, do not try to estimate scale
+    # the following condition is supposed to reproduce np.allclose() behavior
+    if (np.abs(x[0] - x) <= ((1e-8) + (1e-5) * np.abs(x[0]))).all():
+        return x[0]
+
     s = estimate_sigma(x)*np.sqrt(len(x)/np.log(1/eps))
     m = 0
     diff = 1

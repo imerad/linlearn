@@ -202,10 +202,11 @@ def multilogistic_value_batch(y, z):
 
 @njit
 def multilogistic_derivative(y, z, j1):
+    sftmax = softmax1(z, j1)
     if y == j1:
-        return softmax1(z, j1) - 1
+        return sftmax - 1
     else:
-        return softmax1(z, j1)
+        return sftmax
 
 
 @njit

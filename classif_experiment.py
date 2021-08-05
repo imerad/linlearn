@@ -10,6 +10,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import pandas as pd
 from scipy.special import logsumexp, softmax
+import time
 
 from tick.linear_model import ModelLogReg
 from tick.solver import SVRG
@@ -72,6 +73,7 @@ mnist_test_labels = _labels(mnist_test_labels_file)
 
 save_results = False
 max_iter = 150
+fit_intercept = True
 
 logging.info(128*"=")
 logging.info("Running new experiment session")
@@ -86,16 +88,16 @@ def MOM_classifier():
     pass
 
 
-def SVRG(X, y, obj, grad, w0, step, m, T):
+def SVRG(X, y, obj, grad, w0, step, m, T, fit_intercept=False):
     w_tilde = w0
     wt = w0
-    track_objective = [obj(X, y, w0)]
+    track_objective = [obj(X, y, w0, fit_intercept=fit_intercept)]
     for i in range(T//m):
-        mu = grad(X, y, w_tilde)
+        mu = grad(X, y, w_tilde, fit_intercept=fit_intercept)
         for j in range(m):
             ind = np.random.randint(X.shape[0])
-            wt -= step*(grad(X[ind:ind+1,:], y[ind:ind+1,:], wt) - grad(X[ind:ind+1,:], y[ind:ind+1,:], w_tilde) + mu)
-            track_objective.append(obj(X, y, wt))
+            wt -= step*(grad(X[ind:ind+1,:], y[ind:ind+1,:], wt, fit_intercept=fit_intercept) - grad(X[ind:ind+1,:], y[ind:ind+1,:], w_tilde, fit_intercept=fit_intercept) + mu)
+            track_objective.append(obj(X, y, wt, fit_intercept=fit_intercept))
         w_tilde = wt
     return w_tilde, track_objective
 
@@ -105,11 +107,14 @@ def objective(X, y, w, fit_intercept=False):
     obj = (-scores[np.arange(X.shape[0]), np.argmax(y, axis=1)] + logsumexp(scores, axis=1)).mean()
     return obj
 
-def gradient(X, y, w):
-    scores = X @ w # X @ w[1:,:] + w[0,:]
+def gradient(X, y, w, fit_intercept=False):
+    scores = X @ w[1:,:] + w[0,:] if fit_intercept else X @ w
     scores = np.hstack((scores, np.zeros((X.shape[0], 1))))
-    sftmax = softmax(scores, axis=1) - np.hstack((y, np.zeros(X.shape[0])))
-    return (X.T @ sftmax[:,:-1])/X.shape[0] # np.vstack((np.ones((X.shape[0], 1)) @ sftmax[:,:-1], X.T @ sftmax[:,:-1]
+    sftmax = softmax(scores, axis=1) - y#np.hstack((y, np.zeros((X.shape[0], 1))))
+    if fit_intercept:
+        return np.vstack((sftmax[:,:-1].sum(axis=0), X.T @ sftmax[:,:-1]))/X.shape[0]
+    else:
+        return (X.T @ sftmax[:,:-1])/X.shape[0] # np.vstack((np.ones((X.shape[0], 1)) @ sftmax[:,:-1], X.T @ sftmax[:,:-1]
 
 algorithms = [MOM_classifier]
 
@@ -146,35 +151,44 @@ col_try, col_noise, col_algo, col_val, col_n_samples = [], [], [], [], []
 #
 #     logging.info("Saved results in file %s" % filename)
 
-mom_reg = MultiClassifier(tol=1e-17, max_iter=max_iter, strategy="mom",
+
+mom_reg = MultiClassifier(tol=1e-17, max_iter=max_iter, strategy="catoni", fit_intercept=fit_intercept,
                              thresholding=False, step_size=0.1, loss="multilogistic", penalty="none")
 
-n_samples = 100
-X = mnist_train_images[:n_samples,:]
+n_samples = 500
+X = np.float64(mnist_train_images[:n_samples,:])
 y = mnist_train_labels[:n_samples,:]
+labels = np.argmax(y, axis=1)
+
+start_time = time.time()
 
 mom_reg.fit(X, y)
+
+print("--- %s seconds ---" % (time.time() - start_time))
+
 mom_pred = mom_reg.predict(mnist_train_images[:n_samples,:])
 
-
-#############################@
-model = ModelLogReg(fit_intercept=False).fit(X, np.argmax(y, axis=1))
-#prox = ProxElasticNet(strength=1e-3, ratio=0.5, range=(0, X.shape[1]))
-
-solver_params = {'max_iter': max_iter, 'tol': 0., 'verbose': True}
-x0 = np.zeros(model.n_coeffs)
-print(model.n_coeffs)
-prox = ProxL1(strength=0.001)
-svrg = SVRG(**solver_params).set_model(model).set_prox(prox)
-svrg.solve(x0, step=1 / model.get_lip_max())
-
-#print(svrg.solution.shape)
-#plot_history([svrg], log_scale=True, dist_min=True)
-
-
 correct = 0
+print("mom accuracy")
+for i in range(n_samples):
+    if mom_pred[i] == labels[i]:
+        correct += 1
+print(correct/n_samples)
+
+
+# w, track = SVRG(X, y, objective, gradient, np.zeros((X.shape[1]+int(fit_intercept), 9)), 0.01, 10, max_iter, fit_intercept=fit_intercept)
+#
+# plt.plot(track)
+# plt.show()
+#
+# correct = 0
+# print("SVRG accuracy")
+# if fit_intercept:
+#     pred = np.argmax(np.hstack((X @ w[1:,:] + w[0,:], np.zeros((X.shape[0], 1)))), axis=1)
+# else:
+#     pred = np.argmax(np.hstack((X @ w , np.zeros((X.shape[0], 1)))), axis = 1)
 # for i in range(n_samples):
 #     if pred[i] == np.argmax(mnist_train_labels[i, :]):
 #         correct += 1
-# print("mom accuracy : %f" % (correct/n_samples))
-svrg_pred = np.argmax(X.dot(svrg.solution), axis=1)
+#
+# print(correct/n_samples)

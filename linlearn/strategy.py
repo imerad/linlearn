@@ -16,13 +16,25 @@ from .catoni import standard_catoni_estimator, Holland_catoni_estimator
 Strategy = namedtuple("Strategy", ["grad_coordinate", "n_samples_in_block", "name"])
 
 
+# @njit
+# def decision_function(X, fit_intercept, w, out):
+#     if fit_intercept:
+#         # TODO: use out= in dot and + z[0] at the same time with parallelize ?
+#         out[:] = X.dot(w[1:,:]) + w[0,:]
+#     else:
+#         out[:] = X.dot(w)
+#     return out
+
 @njit
-def decision_function(X, fit_intercept, w, out):
-    if fit_intercept:
-        # TODO: use out= in dot and + z[0] at the same time with parallelize ?
-        out[:] = X.dot(w[1:,:]) + w[0,:]
-    else:
-        out[:] = X.dot(w)
+def decision_function_with_intercept(X, w, out):
+    # TODO: use out= in dot and + z[0] at the same time with parallelize ?
+    out[:] = X.dot(w[1]) + w[0]
+    return out
+
+@njit
+def decision_function_no_intercept(X, w, out):
+    # TODO: use out= in dot and + z[0] at the same time with parallelize ?
+    out[:] = X.dot(w)
     return out
 
 
@@ -307,7 +319,6 @@ def grad_coordinate_catoni(
     # TODO:instanciates in the closure
 
     place_holder = np.empty(n_samples, dtype=X.dtype)
-
     if fit_intercept:
         if j[0] == 0:
             # In this case it's the derivative w.r.t the intercept
@@ -322,8 +333,7 @@ def grad_coordinate_catoni(
         # There is no intercept
         for idx in range(n_samples):
             place_holder[idx] = loss_derivative(y[idx], inner_products[idx], j[1]) * X[idx, j[0]]
-
-        return Holland_catoni_estimator(place_holder)
+    return Holland_catoni_estimator(place_holder)
 
 
 def catoni_strategy_factory(loss, X, y, fit_intercept, **kwargs):

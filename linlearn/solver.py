@@ -8,7 +8,7 @@ from collections import namedtuple
 # from .history import History
 # from linlearn.model.utils import inner_prods
 
-from .strategy import grad_coordinate_erm, decision_function
+from .strategy import grad_coordinate_erm, decision_function_with_intercept, decision_function_no_intercept
 from .penalty import l1_apply_single
 from .catoni import estimate_sigma
 
@@ -123,20 +123,28 @@ def coordinate_gradient_descent(
 ):
     n_samples, n_features = X.shape
 
+    if fit_intercept:
+        n_w_cols = w[1].shape[1]
+        w_size = (w[1].shape[0]+1)*w[1].shape[1]
+    else:
+        n_w_cols = w.shape[1]
+        w_size = w.shape[0]*w.shape[1]
+
     # Computation of the initial inner products
 
-    inner_products = np.empty((n_samples, w.shape[1]), dtype=X.dtype)
+    inner_products = np.empty((n_samples, n_w_cols), dtype=X.dtype)
     # Compute the inner products X . w + b
     # TODO: decision function should be given by the strategy
-    decision_function(X, fit_intercept, w, out=inner_products)
+    if fit_intercept:
+        decision_function_with_intercept(X, w, out=inner_products)
+    else:
+        decision_function_no_intercept(X, w, out=inner_products)
 
     loss_value_batch = loss.value_batch
     loss_derivative = loss.derivative
 
     penalty_value = penalty.value
     penalty_apply_single = penalty.apply_single
-
-    w_size = w.shape[0]*w.shape[1]
 
     if tracked_funs:
         tracks = [np.ones(max_iter) for i in range(len(tracked_funs))]
@@ -149,7 +157,7 @@ def coordinate_gradient_descent(
         obj = loss_value_batch(y, inner_products)
         if fit_intercept:
             # obj += penalty_value(w[1:], penalty_strength)
-            obj += penalty_value(w[1:,:])
+            obj += penalty_value(w[1])
         else:
             # obj += penalty_value(w, penalty_strength)
             obj += penalty_value(w)
@@ -168,10 +176,9 @@ def coordinate_gradient_descent(
 
         max_abs_delta = 0.0
         max_abs_weight = 0.0
-
         for idx in range(w_size):
             j = coordinates[idx]
-            j = (j // w.shape[1], j % w.shape[1])
+            j = (j // n_w_cols, j % n_w_cols)
             # print("j: ", j)
             # TODO: pour integrer mom il suffit de passer aussi en argument grad_coordinate mais les protoypes sont differents...
 
@@ -180,17 +187,24 @@ def coordinate_gradient_descent(
             if thresholding:# and cycle > 20:
                 grad_j = l1_apply_single(grad_j, thresholds[j])
 
-            if fit_intercept and j[0] == 0:
-                # It's the intercept, so we don't penalize
-                w_j_new = w[j[0], j[1]] - steps[j[0]] * grad_j
+            if fit_intercept:
+                if j[0] == 0:
+                    # It's the intercept, so we don't penalize
+                    w_j_new = w[0][0, j[1]] - steps[j[0]] * grad_j
+                    delta_j = w_j_new - w[0][0, j[1]]
+                else:
+                    # It's the intercept, so we don't penalize
+                    w_j_new = w[1][j[0] - 1, j[1]] - steps[j[0]] * grad_j
+                    delta_j = w_j_new - w[1][j[0] - 1, j[1]]
             else:
                 # It's not the intercept
                 w_j_new = w[j[0], j[1]] - steps[j[0]] * grad_j
                 w_j_new = penalty_apply_single(w_j_new, steps[j[0]])
+                delta_j = w_j_new - w[j[0], j[1]]
 
             # print("w[j]: ", w[j], "w_j_new: ", w_j_new)
             # Update the inner products
-            delta_j = w_j_new - w[j[0], j[1]]
+            #delta_j = w_j_new - w[j[0], j[1]]
 
             # Update the maximum update change
             abs_delta_j = fabs(delta_j)
@@ -206,20 +220,21 @@ def coordinate_gradient_descent(
                 if j[0] == 0:
                     for i in range(n_samples):
                         inner_products[i, j[1]] += delta_j
+                    w[0][0, j[1]] = w_j_new
                 else:
                     for i in range(n_samples):
                         inner_products[i, j[1]] += delta_j * X[i, j[0] - 1]
+                    w[1][j[0] - 1, j[1]] = w_j_new
             else:
                 for i in range(n_samples):
                     inner_products[i] += delta_j * X[i, j[0]]
-            w[j[0], j[1]] = w_j_new
+                w[j[0], j[1]] = w_j_new
 
         # print("max_abs_delta, max_abs_weight: ", max_abs_delta, max_abs_weight)
         return max_abs_delta, max_abs_weight
 
     # Value of the objective at initialization
     obj = objective(w)
-    w_size = w.shape[0]*w.shape[1]
 
     # TODO: First value for tolerance is 1.0 or NaN
     history.update(epoch=0, obj=obj, tol=1.0, update_bar=False)
@@ -243,9 +258,7 @@ def coordinate_gradient_descent(
         coordinates = permutation(w_size)
         # Launch the coordinates cycle
 
-        max_abs_delta, max_abs_weight = coordinate_gradient_descent_cycle(
-            w, inner_products, coordinates, thresholds, cycle
-        )
+        max_abs_delta, max_abs_weight = coordinate_gradient_descent_cycle(w, inner_products, coordinates, thresholds, cycle)
 
         if tracked_funs:
             for i, f in enumerate(tracked_funs):

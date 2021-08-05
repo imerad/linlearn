@@ -19,6 +19,7 @@ logging.basicConfig(
 )
 
 save_results = False
+save_fig = True
 
 logging.info(128*"=")
 logging.info("Running new experiment session")
@@ -37,11 +38,11 @@ outliers = False
 
 mom_thresholding = True
 mom_thresholding = False
-MOMreg_block_size = 0.07
+MOMreg_block_size = 0.1
 adamom_K_init = 20
 
 catoni_thresholding = True
-#catoni_thresholding = False
+catoni_thresholding = False
 
 random_seed = 43
 
@@ -51,7 +52,7 @@ Sigma_X = np.diag(np.arange(1, n_features+1))
 mu_X = np.ones(n_features)
 
 w_star_dist = "uniform"
-noise_dist = "gaussian"
+noise_dist = "lognormal"
 
 step_size = 0.01
 T = 120
@@ -267,7 +268,7 @@ for rep in range(n_repeats):
     optimal_risk = minimize(true_risk, np.zeros(n_features), jac=true_gradient).fun
     optimal_empirical_risk = minimize(empirical_risk, np.zeros(n_features), jac=empirical_gradient).fun
 
-    def excess_empirical_risk(w): return empirical_risk(w.flatten()) - optimal_empirical_risk
+    def excess_empirical_risk(w): return empirical_risk((w ).flatten()) - optimal_empirical_risk
     def excess_risk(w): return true_risk(w.flatten()) - optimal_risk
 
     outputs = {}
@@ -277,8 +278,8 @@ for rep in range(n_repeats):
     for gradient in [empirical_gradient, true_gradient, Holland_gradient]:
         outputs[gradient.__name__] = gradient_descent([excess_empirical_risk, excess_risk], np.zeros(n_features), gradient, step_size, T)
 
-    MOM_regressor = MOMRegressor(tol=1e-17, max_iter=T, fit_intercept=False, strategy="mom", thresholding=mom_thresholding, step_size=step_size, block_size=MOMreg_block_size)
-    MOM_regressor.fit(X, y, tracked_funs=[excess_empirical_risk, excess_risk])
+    MOM_regressor = MOMRegressor(tol=1e-17, max_iter=T, fit_intercept=True, strategy="mom", thresholding=mom_thresholding, step_size=step_size, block_size=MOMreg_block_size)
+    MOM_regressor.fit(X, y, tracked_funs=[lambda x : excess_empirical_risk(x[1]), lambda x : excess_risk(x[1])])
 
     outputs["mom_cgd"] = MOM_regressor.optimization_result_.tracked_funs
     #logging.info("running MOM cgd")
@@ -323,7 +324,7 @@ g.map(
     "value",
     "algo",
     #lw=4,
-)#.set(yscale="log")#, xlabel="", ylabel="")
+).set(yscale="log")#, xlabel="", ylabel="")
 
 #g.set_titles(col_template="{col_name}")
 
@@ -342,4 +343,14 @@ plt.legend(
     #borderaxespad=0.0,
     #fontsize=14,
 )
+g.fig.subplots_adjust(top=0.9)
+g.fig.suptitle('n=%d , noise=%s , $\\sigma$ = %.2f, block_size=%.2f, w_star_dist=%s' % (n_samples, noise_dist, noise_sigma[noise_dist], MOMreg_block_size, w_star_dist))
+
 plt.show()
+
+if save_fig:
+    now = datetime.now().strftime("%Y-%m-%d-%H:%M:%S")
+    specs = 'n%d_%s%.2f_block_size=%.2f_w_dist=%s' % (n_samples, noise_dist, noise_sigma[noise_dist], MOMreg_block_size, w_star_dist)
+    fig_file_name = "exp_archives/linreg/" + specs + now + ".pdf"
+    g.fig.savefig(fname=fig_file_name)#, bbox_inches='tight')
+    logging.info("Saved figure into file : %s" % fig_file_name)
