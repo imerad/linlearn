@@ -8,7 +8,7 @@ from collections import namedtuple
 # from .history import History
 # from linlearn.model.utils import inner_prods
 
-from .strategy import grad_coordinate_erm, decision_function_with_intercept, decision_function_no_intercept
+from .strategy import grad_coordinate_erm, decision_function, grad_coordinate_per_sample, median_of_means
 from .penalty import l1_apply_single
 from .catoni import estimate_sigma
 
@@ -19,8 +19,6 @@ from .catoni import estimate_sigma
 OptimizationResult = namedtuple(
     "OptimizationResult", ["n_iter", "tol", "success", "w", "message", "tracked_funs"]
 )
-
-DELTA = 0.01
 
 # Attributes
 # xndarray
@@ -136,9 +134,9 @@ def coordinate_gradient_descent(
     # Compute the inner products X . w + b
     # TODO: decision function should be given by the strategy
     if fit_intercept:
-        decision_function_with_intercept(X, w, out=inner_products)
+        decision_function(X, w[1], w[0], out=inner_products)
     else:
-        decision_function_no_intercept(X, w, out=inner_products)
+        decision_function(X, w, 0, out=inner_products)
 
     loss_value_batch = loss.value_batch
     loss_derivative = loss.derivative
@@ -156,10 +154,8 @@ def coordinate_gradient_descent(
     def objective(w):
         obj = loss_value_batch(y, inner_products)
         if fit_intercept:
-            # obj += penalty_value(w[1:], penalty_strength)
             obj += penalty_value(w[1])
         else:
-            # obj += penalty_value(w, penalty_strength)
             obj += penalty_value(w)
         return obj
 
@@ -182,7 +178,7 @@ def coordinate_gradient_descent(
             # print("j: ", j)
             # TODO: pour integrer mom il suffit de passer aussi en argument grad_coordinate mais les protoypes sont differents...
 
-            grad_j = grad_coordinate(j, inner_products)
+            grad_j = grad_coordinate(X, y, j, inner_products)
 
             if thresholding:# and cycle > 20:
                 grad_j = l1_apply_single(grad_j, thresholds[j])
@@ -193,18 +189,15 @@ def coordinate_gradient_descent(
                     w_j_new = w[0][0, j[1]] - steps[j[0]] * grad_j
                     delta_j = w_j_new - w[0][0, j[1]]
                 else:
-                    # It's the intercept, so we don't penalize
+                    # It's not the intercept
                     w_j_new = w[1][j[0] - 1, j[1]] - steps[j[0]] * grad_j
+                    w_j_new = penalty_apply_single(w_j_new, steps[j[0]])
                     delta_j = w_j_new - w[1][j[0] - 1, j[1]]
             else:
                 # It's not the intercept
                 w_j_new = w[j[0], j[1]] - steps[j[0]] * grad_j
                 w_j_new = penalty_apply_single(w_j_new, steps[j[0]])
                 delta_j = w_j_new - w[j[0], j[1]]
-
-            # print("w[j]: ", w[j], "w_j_new: ", w_j_new)
-            # Update the inner products
-            #delta_j = w_j_new - w[j[0], j[1]]
 
             # Update the maximum update change
             abs_delta_j = fabs(delta_j)
@@ -227,7 +220,7 @@ def coordinate_gradient_descent(
                     w[1][j[0] - 1, j[1]] = w_j_new
             else:
                 for i in range(n_samples):
-                    inner_products[i] += delta_j * X[i, j[0]]
+                    inner_products[i, j[1]] += delta_j * X[i, j[0]]
                 w[j[0], j[1]] = w_j_new
 
         # print("max_abs_delta, max_abs_weight: ", max_abs_delta, max_abs_weight)
@@ -242,12 +235,12 @@ def coordinate_gradient_descent(
 
     def compute_thresholds():
         if strategy.name == "mom":
-            variances = estimate_grad_coord_variances_mom(loss, X, y, w, fit_intercept, inner_products,
+            variances = estimate_grad_coord_variances(loss, X, y, w, fit_intercept, inner_products,
                                                       strategy.n_samples_in_block)
             return np.sqrt(
                 variances * (np.log(n_features * max_iter) / n_samples + 1 / (8 * strategy.n_samples_in_block)))/5  #
         else:#catoni
-            variances = estimate_grad_coord_variances_catoni(loss, X, y, w, fit_intercept, inner_products)
+            variances = estimate_grad_coord_variances(loss, X, y, w, fit_intercept, inner_products)
             return variances * np.sqrt(np.log(n_features*max_iter)/n_samples)/5 #
 
 
@@ -257,7 +250,6 @@ def coordinate_gradient_descent(
         # Sample a permutation of the coordinates
         coordinates = permutation(w_size)
         # Launch the coordinates cycle
-
         max_abs_delta, max_abs_weight = coordinate_gradient_descent_cycle(w, inner_products, coordinates, thresholds, cycle)
 
         if tracked_funs:
@@ -376,97 +368,144 @@ def coordinate_gradient_descent(
 def coordinate_gradient_descent_factory():
     pass
 
-
 solvers_factory = {"cgd": coordinate_gradient_descent_factory}
 
+def batched_coordinate_gradient_descent(
+    loss, penalty, strategy, w, X, y, fit_intercept, steps, batch_size, max_iter, tol, tracked_funs=None
+):
+    n_samples, n_features = X.shape
 
-def estimate_grad_coord_variances_mom(loss, X, y, w, fit_intercept, inner_products, n_samples_in_block):
+    if fit_intercept:
+        n_w_cols = w[1].shape[1]
+        w_size = (w[1].shape[0]+1)*w[1].shape[1]
+    else:
+        n_w_cols = w.shape[1]
+        w_size = w.shape[0]*w.shape[1]
 
-    variances = np.empty_like(w)
+    n_batches = n_samples //batch_size + int(n_samples % batch_size > 0)
+    X_batches = [X[i*batch_size:(i+1)*batch_size] for i in range(n_batches)]
+    y_batches = [y[i*batch_size:(i+1)*batch_size] for i in range(n_batches)]
+
+    inner_products = np.empty((batch_size, n_w_cols), dtype=X.dtype)
+
+    penalty_apply_single = penalty.apply_single
+
+    tracks = [np.ones(max_iter) for i in range(len(tracked_funs))] if tracked_funs else None
+
+    grad_coordinate = strategy.grad_coordinate
+
+    @njit
+    def coordinate_gradient_descent_cycle(
+        w, inner_products, coordinates, batch_idx
+    ):
+        """This function implements one cycle of coordinate gradient descent
+        """
+        # This implementation assumes dense data and a separable prox_old
+        # TODO: F order C order
+
+        #X_batch = X_batches[batch_idx]
+        #y_batch = y_batches[batch_idx]
+        effective_batch_size = batch_size - max(0, (batch_idx+1)*batch_size - X.shape[0])
+
+        if fit_intercept:
+            decision_function(X[batch_idx*batch_size:(batch_idx+1)*batch_size], w[1], w[0], out=inner_products[:effective_batch_size])
+        else:
+            decision_function(X[batch_idx*batch_size:(batch_idx+1)*batch_size], w, 0, out=inner_products[:effective_batch_size])
+
+        max_abs_delta = 0.0
+        max_abs_weight = 0.0
+        for idx in range(w_size):
+            j = coordinates[idx]
+            j = (j // n_w_cols, j % n_w_cols)
+            # TODO: pour integrer mom il suffit de passer aussi en argument grad_coordinate mais les protoypes sont differents...
+
+            grad_j = grad_coordinate(X[batch_idx*batch_size:(batch_idx+1)*batch_size,:], y[batch_idx*batch_size:(batch_idx+1)*batch_size], j, inner_products[:effective_batch_size])
+
+            if fit_intercept:
+                if j[0] == 0:
+                    # It's the intercept, so we don't penalize
+                    w_j_new = w[0][0, j[1]] - steps[j[0]] * grad_j
+                    delta_j = w_j_new - w[0][0, j[1]]
+                    w[0][0, j[1]] = w_j_new
+                else:
+                    # It's not the intercept
+                    w_j_new = w[1][j[0] - 1, j[1]] - steps[j[0]] * grad_j
+                    w_j_new = penalty_apply_single(w_j_new, steps[j[0]])
+                    delta_j = w_j_new - w[1][j[0] - 1, j[1]]
+                    w[1][j[0] - 1, j[1]] = w_j_new
+            else:
+                # It's not the intercept
+                w_j_new = w[j[0], j[1]] - steps[j[0]] * grad_j
+                w_j_new = penalty_apply_single(w_j_new, steps[j[0]])
+                delta_j = w_j_new - w[j[0], j[1]]
+                w[j[0], j[1]] = w_j_new
+
+            # Update the maximum update change
+            abs_delta_j = fabs(delta_j)
+            if abs_delta_j > max_abs_delta:
+                max_abs_delta = abs_delta_j
+
+            # Update the maximum weight
+            abs_w_j_new = fabs(w_j_new)
+            if abs_w_j_new > max_abs_weight:
+                max_abs_weight = abs_w_j_new
+
+        return max_abs_delta, max_abs_weight
+
+
+    for cycle in range(1, max_iter + 1):
+        # Sample a permutation of the coordinates
+        coordinates = permutation(w_size)
+        # Launch the coordinates cycle
+
+        max_abs_delta, max_abs_weight = coordinate_gradient_descent_cycle(w, inner_products, coordinates, (cycle-1)%n_batches)
+
+        if tracked_funs:
+            for i, f in enumerate(tracked_funs):
+                tracks[i][cycle-1] = f(w)
+
+        if max_abs_weight == 0.0:
+            print("cycle: ", cycle)
+            print("max_abs_weight == 0.0")
+
+    return OptimizationResult(
+        w=w, n_iter=max_iter + 1, success=False, tol=tol, message=None, tracked_funs=tracks
+    )
+
+
+def estimate_grad_coord_variances(loss, X, y, w, fit_intercept, inner_products, n_samples_in_block=None):
+    """when n_samples_in_block is None, the variance is estimated using catoni, otherwise we use MOM"""
+    if fit_intercept:
+        variances = np.empty((w[1].shape[0]+1, w[1].shape[1]), dtype=w[1].dtype)
+    else:
+        variances = np.empty_like(w)
+
     loss_derivative = loss.derivative
 
     n_samples = inner_products.shape[0]
 
-    n_blocks = n_samples // n_samples_in_block
-    last_block_size = n_samples % n_samples_in_block
-    n_blocks += int(last_block_size > 0)
+    if fit_intercept:
+        grads = np.empty((n_samples, w[1].shape[0]+1, w[1].shape[1]), dtype=X.dtype)
+    else:
+        grads = np.empty((n_samples, w.shape[0], w.shape[1]), dtype=X.dtype)
 
-    grad_means_in_blocks = np.empty(n_blocks, dtype=X.dtype)
-    grad_sqmeans_in_blocks = np.empty(n_blocks, dtype=X.dtype)
 
-    from numpy.random import permutation
+    for j1 in range(grads.shape[1]):
+        for j2 in range(grads.shape[2]):
+            grads[:, j1, j2] = grad_coordinate_per_sample(loss_derivative, (j1, j2), X, y, inner_products, fit_intercept)
 
-    # This shuffle or the indexes to get different blocks each time
-    idx_samples = np.arange(n_samples)
-    permutation(idx_samples)
+    if n_samples_in_block is None:#catoni
+        for j1 in range(grads.shape[1]):
+            for j2 in range(grads.shape[2]):
+                variances[j1, j2] = estimate_sigma(grads[:, j1, j2])
+    else:#mom
+        grads_sq = np.power(grads, 2)
 
-    # Cumulative sum in the block
-    grad_block = 0.0
-    grad_sq_block = 0.0
-
-    grads = np.empty((n_samples, len(w)), dtype=X.dtype)
-
-    for idx in range(n_samples):
-        i = idx_samples[idx]
-        if fit_intercept:
-            grads[i, 0] = loss_derivative(y[i], inner_products[i])
-            # print(grads[1:].shape, X[i, :].shape)
-            grads[i, 1:] = grads[i, 0] * X[i, :]
-        else:
-            grads[i,:] = loss_derivative(y[i], inner_products[i]) * X[i, :]
-
-    grads_sq = np.power(grads, 2)
-
-    for j in range(len(w)):
-        # Block counter
-        n_block = 0
-        for idx in range(n_samples):
-            i = idx_samples[idx]
-            # Update current sum in the block
-            grad_block += grads[i, j]
-            grad_sq_block += grads_sq[i, j]
-            # sum_block += x[i]
-            if (i != 0) and ((i + 1) % n_samples_in_block == 0):
-                # It's the end of the block, we need to save its mean
-                # print("sum_block: ", sum_block)
-                grad_means_in_blocks[n_block] = grad_block / n_samples_in_block
-                grad_sqmeans_in_blocks[n_block] = grad_sq_block / n_samples_in_block
-                n_block += 1
-                grad_block = 0.0
-                grad_sq_block = 0.0
-
-        if last_block_size != 0:
-            grad_means_in_blocks[n_block] = grad_block / last_block_size
-            grad_sqmeans_in_blocks[n_block] = grad_sq_block / last_block_size
-
-        variances[j] = np.median(grad_sqmeans_in_blocks) - (np.median(grad_means_in_blocks)) ** 2
-
+        for j1 in range(grads.shape[1]):
+            for j2 in range(grads.shape[2]):
+                variances[(j1, j2)] = median_of_means(grads_sq[:,j1 , j2], n_samples_in_block) - (median_of_means(grads[:,j1 , j2], n_samples_in_block)) ** 2
     return variances
 
-
-
-def estimate_grad_coord_variances_catoni(loss, X, y, w, fit_intercept, inner_products):
-
-    variances = np.empty_like(w)
-    loss_derivative = loss.derivative
-
-    n_samples = inner_products.shape[0]
-
-    grads = np.empty((n_samples, len(w)), dtype=X.dtype)
-
-    for i in range(n_samples):
-        if fit_intercept:
-            grads[i, 0] = loss_derivative(y[i], inner_products[i])
-            # print(grads[1:].shape, X[i, :].shape)
-            grads[i, 1:] = grads[i, 0] * X[i, :]
-        else:
-            grads[i,:] = loss_derivative(y[i], inner_products[i]) * X[i, :]
-
-    for j in range(len(w)):
-
-        variances[j] = estimate_sigma(grads[:, j])
-
-    return variances
 
 # Dans SAG critere d'arret :
 # if status == -1:

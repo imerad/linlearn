@@ -2,14 +2,8 @@ import numpy as np
 from numpy.random import permutation
 from numba import njit, prange
 from collections import namedtuple
-from .catoni import standard_catoni_estimator, Holland_catoni_estimator
+from .catoni import Holland_catoni_estimator
 
-# @njit
-# def inner_prod(X, fit_intercept, i, w):
-#     if fit_intercept:
-#         return X[i].dot(w[1:]) + w[0]
-#     else:
-#         return X[i].dot(w)
 
 # TODO: definir ici une strategy
 
@@ -25,27 +19,24 @@ Strategy = namedtuple("Strategy", ["grad_coordinate", "n_samples_in_block", "nam
 #         out[:] = X.dot(w)
 #     return out
 
+# @njit
+# def decision_function_with_intercept(X, w, out):
+#     # TODO: use out= in dot and + z[0] at the same time with parallelize ?
+#     out[:] = X.dot(w[1]) + w[0]
+#     return out
+#
+# @njit
+# def decision_function_no_intercept(X, w, out):
+#     # TODO: use out= in dot and + z[0] at the same time with parallelize ?
+#     out[:] = X.dot(w)
+#     return out
+
+
 @njit
-def decision_function_with_intercept(X, w, out):
+def decision_function(X, coef, intercept, out):
     # TODO: use out= in dot and + z[0] at the same time with parallelize ?
-    out[:] = X.dot(w[1]) + w[0]
-    return out
 
-@njit
-def decision_function_no_intercept(X, w, out):
-    # TODO: use out= in dot and + z[0] at the same time with parallelize ?
-    out[:] = X.dot(w)
-    return out
-
-
-@njit
-def decision_function_coef_intercept(X, fit_intercept, coef, intercept, out):
-    if fit_intercept:
-        # TODO: use out= in dot and + z[0] at the same time with parallelize ?
-        # intercept is in a (1,) ndarray, following scikit-learn
-        out[:] = X.dot(coef) + intercept[0]
-    else:
-        out[:] = X.dot(coef)
+    out[:] = X.dot(coef) + intercept
     return out
 
 
@@ -100,27 +91,34 @@ from numba import njit
 
 
 @njit
-def median_of_means(x, block_size, blocks_means):
+def median_of_means(x, block_size):
     n = x.shape[0]
-    n_blocks = n // block_size
+    n_blocks = int(n // block_size)
     last_block_size = n % block_size
+    if last_block_size == 0:
+        block_means = np.empty(n_blocks, dtype=x.dtype)
+    else:
+        block_means = np.empty(n_blocks + 1, dtype=x.dtype)
+
+    # TODO:instanciates in the closure
+    # This shuffle or the indexes to get different blocks each time
+    permuted_indices = permutation(n)
     sum_block = 0.0
     n_block = 0
     for i in range(n):
+        idx = permuted_indices[i]
         # Update current sum in the block
-        # print(sum_block, "+=", x[i])
-        sum_block += x[i]
+        sum_block += x[idx]
         if (i != 0) and ((i + 1) % block_size == 0):
             # It's the end of the block, save its mean
-            # print("sum_block: ", sum_block)
-            blocks_means[n_block] = sum_block / block_size
+            block_means[n_block] = sum_block / block_size
             n_block += 1
             sum_block = 0.0
 
     if last_block_size != 0:
-        blocks_means[n_blocks] = sum_block / last_block_size
+        block_means[n_blocks] = sum_block / last_block_size
 
-    mom = np.median(blocks_means)
+    mom = np.median(block_means)
     return mom#, blocks_means
 
 
@@ -144,33 +142,47 @@ def median_of_means(x, block_size, blocks_means):
 #
 # print("mom: ", mom)
 
+@njit
+def grad_coordinate_per_sample(
+    loss_derivative,
+    j,
+    X,
+    y,
+    inner_products,
+    fit_intercept,
+):
+    n_samples = inner_products.shape[0]
+    # TODO: parallel ?
+    # TODO: sparse matrix ?
+
+    place_holder = np.empty(n_samples, dtype=X.dtype)
+    if fit_intercept:
+        if j[0] == 0:
+            # In this case it's the derivative w.r.t the intercept
+            for idx in range(n_samples):
+                place_holder[idx] = loss_derivative(y[idx], inner_products[idx], j[1])
+
+        else:
+            for idx in range(n_samples):
+                place_holder[idx] = loss_derivative(y[idx], inner_products[idx], j[1]) * X[idx, j[0] - 1]
+
+    else:
+        # There is no intercept
+        for idx in range(n_samples):
+            place_holder[idx] = loss_derivative(y[idx], inner_products[idx], j[1]) * X[idx, j[0]]
+    return place_holder
 
 @njit
 def grad_coordinate_erm(loss_derivative, j, X, y, inner_products, fit_intercept):
     """Computation of the derivative of the loss with respect to a coordinate using the
     empirical risk minimization (erm) stategy."""
-    grad = 0.0
-    # TODO: parallel ?
-    # TODO: sparse matrix ?
-    n_samples = inner_products.shape[0]
-    if fit_intercept:
-        if j[0] == 0:
-            # In this case it's the derivative w.r.t the intercept
-            for i in range(n_samples):
-                grad += loss_derivative(y[i], inner_products[i], j[1])
-        else:
-            for i in range(n_samples):
-                grad += loss_derivative(y[i], inner_products[i], j[1]) * X[i, j[0] - 1]
-    else:
-        # There is no intercept
-        for i in range(n_samples):
-            grad += loss_derivative(y[i], inner_products[i], j[1]) * X[i, j[0]]
-    return grad / n_samples
+
+    return np.mean(grad_coordinate_per_sample(loss_derivative, j, X, y, inner_products, fit_intercept))
 
 
-def erm_strategy_factory(loss, X, y, fit_intercept, **kwargs):
+def erm_strategy_factory(loss, fit_intercept, **kwargs):
     @njit
-    def grad_coordinate(j, inner_products):
+    def grad_coordinate(X, y, j, inner_products):
         return grad_coordinate_erm(
             loss.derivative, j, X, y, inner_products, fit_intercept
         )
@@ -190,93 +202,93 @@ def grad_coordinate_mom(
     inner_products,
     fit_intercept,
     n_samples_in_block,
-    # grad_means_in_blocks,
 ):
     """Computation of the derivative of the loss with respect to a coordinate using the
     median of means (mom) stategy."""
-    # grad = 0.0
     # TODO: parallel ?
     # TODO: sparse matrix ?
-    n_samples = inner_products.shape[0]
-    n_blocks = n_samples // n_samples_in_block
-    last_block_size = n_samples % n_samples_in_block
+    return median_of_means(grad_coordinate_per_sample(loss_derivative, j, X, y, inner_products, fit_intercept),n_samples_in_block)
 
-    if n_samples % n_samples_in_block == 0:
-        grad_means_in_blocks = np.empty(n_blocks, dtype=X.dtype)
-    else:
-        grad_means_in_blocks = np.empty(n_blocks + 1, dtype=X.dtype)
-
-    # TODO:instanciates in the closure
-    # This shuffle or the indexes to get different blocks each time
-    idx_samples = np.arange(n_samples)
-    permutation(idx_samples)
-
-    # Cumulative sum in the block
-    grad_block = 0.0
-    # Block counter
-    n_block = 0
-
-    #print(j)
-    if fit_intercept:
-        if j[0] == 0:
-            # In this case it's the derivative w.r.t the intercept
-            for idx in range(n_samples):
-                i = idx_samples[idx]
-                # Update current sum in the block
-                # print(sum_block, "+=", x[i])
-                grad_block += loss_derivative(y[i], inner_products[i], j[1])
-                # sum_block += x[i]
-                if (i != 0) and ((i + 1) % n_samples_in_block == 0):
-                    # It's the end of the block, we need to save its mean
-                    # print("sum_block: ", sum_block)
-                    grad_means_in_blocks[n_block] = grad_block / n_samples_in_block
-                    n_block += 1
-                    grad_block = 0.0
-
-            if last_block_size != 0:
-                grad_means_in_blocks[n_blocks] = grad_block / last_block_size
-
-            grad_mom = np.median(grad_means_in_blocks)
-            return grad_mom
-        else:
-            for idx in range(n_samples):
-                i = idx_samples[idx]
-                # Update current sum in the block
-                # print(sum_block, "+=", x[i])
-                grad_block += loss_derivative(y[i], inner_products[i], j[1]) * X[i, j[0] - 1]
-                # sum_block += x[i]
-                if (i != 0) and ((i + 1) % n_samples_in_block == 0):
-                    # It's the end of the block, we need to save its mean
-                    # print("sum_block: ", sum_block)
-                    grad_means_in_blocks[n_block] = grad_block / n_samples_in_block
-                    n_block += 1
-                    grad_block = 0.0
-
-            if last_block_size != 0:
-                grad_means_in_blocks[n_blocks] = grad_block / last_block_size
-
-            grad_mom = np.median(grad_means_in_blocks)
-            return grad_mom
-    else:
-        # There is no intercept
-        for idx in range(n_samples):
-            i = idx_samples[idx]
-            # Update current sum in the block
-            # print(sum_block, "+=", x[i])
-            grad_block += loss_derivative(y[i], inner_products[i], j[1]) * X[i, j[0]]
-            # sum_block += x[i]
-            if (i != 0) and ((i + 1) % n_samples_in_block == 0):
-                # It's the end of the block, we need to save its mean
-                # print("sum_block: ", sum_block)
-                grad_means_in_blocks[n_block] = grad_block / n_samples_in_block
-                n_block += 1
-                grad_block = 0.0
-
-        if last_block_size != 0:
-            grad_means_in_blocks[n_blocks] = grad_block / last_block_size
-
-        grad_mom = np.median(grad_means_in_blocks)
-        return grad_mom
+    # n_samples = inner_products.shape[0]
+    # n_blocks = n_samples // n_samples_in_block
+    # last_block_size = n_samples % n_samples_in_block
+    #
+    # if n_samples % n_samples_in_block == 0:
+    #     grad_means_in_blocks = np.empty(n_blocks, dtype=X.dtype)
+    # else:
+    #     grad_means_in_blocks = np.empty(n_blocks + 1, dtype=X.dtype)
+    #
+    # # TODO:instanciates in the closure
+    # # This shuffle or the indexes to get different blocks each time
+    # idx_samples = permutation(n_samples)
+    # #permutation(idx_samples)
+    #
+    # # Cumulative sum in the block
+    # grad_block = 0.0
+    # # Block counter
+    # n_block = 0
+    #
+    # #print(j)
+    # if fit_intercept:
+    #     if j[0] == 0:
+    #         # In this case it's the derivative w.r.t the intercept
+    #         for idx in range(n_samples):
+    #             i = idx_samples[idx]
+    #             # Update current sum in the block
+    #             # print(sum_block, "+=", x[i])
+    #             grad_block += loss_derivative(y[i], inner_products[i], j[1])
+    #             # sum_block += x[i]
+    #             if (idx != 0) and ((idx + 1) % n_samples_in_block == 0):
+    #                 # It's the end of the block, we need to save its mean
+    #                 # print("sum_block: ", sum_block)
+    #                 grad_means_in_blocks[n_block] = grad_block / n_samples_in_block
+    #                 n_block += 1
+    #                 grad_block = 0.0
+    #
+    #         if last_block_size != 0:
+    #             grad_means_in_blocks[n_blocks] = grad_block / last_block_size
+    #
+    #         grad_mom = np.median(grad_means_in_blocks)
+    #         return grad_mom
+    #     else:
+    #         for idx in range(n_samples):
+    #             i = idx_samples[idx]
+    #             # Update current sum in the block
+    #             # print(sum_block, "+=", x[i])
+    #             grad_block += loss_derivative(y[i], inner_products[i], j[1]) * X[i, j[0] - 1]
+    #             # sum_block += x[i]
+    #             if (idx != 0) and ((idx + 1) % n_samples_in_block == 0):
+    #                 # It's the end of the block, we need to save its mean
+    #                 # print("sum_block: ", sum_block)
+    #                 grad_means_in_blocks[n_block] = grad_block / n_samples_in_block
+    #                 n_block += 1
+    #                 grad_block = 0.0
+    #
+    #         if last_block_size != 0:
+    #             grad_means_in_blocks[n_blocks] = grad_block / last_block_size
+    #
+    #         grad_mom = np.median(grad_means_in_blocks)
+    #         return grad_mom
+    # else:
+    #     # There is no intercept
+    #     for idx in range(n_samples):
+    #         i = idx_samples[idx]
+    #         # Update current sum in the block
+    #         # print(sum_block, "+=", x[i])
+    #         grad_block += loss_derivative(y[i], inner_products[i], j[1]) * X[i, j[0]]
+    #         # sum_block += x[i]
+    #         if (idx != 0) and ((idx + 1) % n_samples_in_block == 0):
+    #             # It's the end of the block, we need to save its mean
+    #             # print("sum_block: ", sum_block)
+    #             grad_means_in_blocks[n_block] = grad_block / n_samples_in_block
+    #             n_block += 1
+    #             grad_block = 0.0
+    #
+    #     if last_block_size != 0:
+    #         grad_means_in_blocks[n_blocks] = grad_block / last_block_size
+    #
+    #     grad_mom = np.median(grad_means_in_blocks)
+    #     return grad_mom
 
 
 # def erm_strategy_factory(loss, X, y, fit_intercept):
@@ -289,9 +301,9 @@ def grad_coordinate_mom(
 #     return Strategy(grad_coordinate=grad_coordinate)
 
 
-def mom_strategy_factory(loss, X, y, fit_intercept, n_samples_in_block, **kwargs):
+def mom_strategy_factory(loss, fit_intercept, n_samples_in_block, **kwargs):
     @njit
-    def grad_coordinate(j, inner_products):
+    def grad_coordinate(X, y, j, inner_products):
         return grad_coordinate_mom(
             loss.derivative, j, X, y, inner_products, fit_intercept, n_samples_in_block
         )
@@ -311,34 +323,35 @@ def grad_coordinate_catoni(
 ):
     """Computation of the derivative of the loss with respect to a coordinate using the
     catoni stategy."""
-    # grad = 0.0
-    # TODO: parallel ?
-    # TODO: sparse matrix ?
-    n_samples = inner_products.shape[0]
+    return Holland_catoni_estimator(grad_coordinate_per_sample(loss_derivative, j, X, y, inner_products, fit_intercept))
 
-    # TODO:instanciates in the closure
+    # # grad = 0.0
+    # # TODO: parallel ?
+    # # TODO: sparse matrix ?
+    # n_samples = inner_products.shape[0]
+    #
+    # # TODO:instanciates in the closure
+    #
+    # place_holder = np.empty(n_samples, dtype=X.dtype)
+    # if fit_intercept:
+    #     if j[0] == 0:
+    #         # In this case it's the derivative w.r.t the intercept
+    #         for idx in range(n_samples):
+    #             place_holder[idx] = loss_derivative(y[idx], inner_products[idx], j[1])
+    #
+    #     else:
+    #         for idx in range(n_samples):
+    #             place_holder[idx] = loss_derivative(y[idx], inner_products[idx], j[1]) * X[idx, j[0] - 1]
+    #
+    # else:
+    #     # There is no intercept
+    #     for idx in range(n_samples):
+    #         place_holder[idx] = loss_derivative(y[idx], inner_products[idx], j[1]) * X[idx, j[0]]
 
-    place_holder = np.empty(n_samples, dtype=X.dtype)
-    if fit_intercept:
-        if j[0] == 0:
-            # In this case it's the derivative w.r.t the intercept
-            for idx in range(n_samples):
-                place_holder[idx] = loss_derivative(y[idx], inner_products[idx], j[1])
 
-        else:
-            for idx in range(n_samples):
-                place_holder[idx] = loss_derivative(y[idx], inner_products[idx], j[1]) * X[idx, j[0] - 1]
-
-    else:
-        # There is no intercept
-        for idx in range(n_samples):
-            place_holder[idx] = loss_derivative(y[idx], inner_products[idx], j[1]) * X[idx, j[0]]
-    return Holland_catoni_estimator(place_holder)
-
-
-def catoni_strategy_factory(loss, X, y, fit_intercept, **kwargs):
+def catoni_strategy_factory(loss, fit_intercept, **kwargs):
     @njit
-    def grad_coordinate(j, inner_products):
+    def grad_coordinate(X, y, j, inner_products):
         return grad_coordinate_catoni(
             loss.derivative, j, X, y, inner_products, fit_intercept
         )

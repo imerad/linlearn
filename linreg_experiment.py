@@ -1,5 +1,6 @@
 from linlearn import MOMRegressor
-from linlearn.catoni import Holland_catoni_estimator, standard_catoni_estimator, estimate_sigma
+from linlearn.catoni import Holland_catoni_estimator, estimate_sigma
+from linlearn.strategy import median_of_means as mom_func
 import numpy as np
 import logging
 import pickle
@@ -30,7 +31,7 @@ if not save_results:
 
 n_repeats = 10
 
-n_samples = 500
+n_samples = 1500
 n_features = 5
 
 n_outliers = 10
@@ -38,7 +39,7 @@ outliers = False
 
 mom_thresholding = True
 mom_thresholding = False
-MOMreg_block_size = 0.1
+MOMreg_block_size = 0.07
 adamom_K_init = 20
 
 catoni_thresholding = True
@@ -55,7 +56,7 @@ w_star_dist = "uniform"
 noise_dist = "lognormal"
 
 step_size = 0.01
-T = 120
+T = 200
 
 logging.info("Lauching experiment with parameters : \n n_repeats = %d , n_samples = %d , n_features = %d , outliers = %r" % (n_repeats, n_samples, n_features, outliers))
 if outliers:
@@ -126,33 +127,33 @@ def catoni_cgd_descent(funs_to_track, x0, step_size, T, steps=None):
         tracks[len(funs_to_track)][t] = np.sqrt(grad_error)
     return tracks
 
-def mom_func(x, block_size):
-    """compute median of means of a sequence of numbers x with given block size"""
-    n = x.shape[0]
-    n_blocks = int(n // block_size)
-    last_block_size = n % block_size
-    blocks_means = np.zeros(int(n_blocks + int(last_block_size > 0)))
-    sum_block = 0.0
-    n_block = 0
-    for i in range(n):
-        # Update current sum in the block
-        # print(sum_block, "+=", x[i])
-        sum_block += x[i]
-        if (i != 0) and ((i + 1) % block_size == 0):
-            # It's the end of the block, save its mean
-            # print("sum_block: ", sum_block)
-            blocks_means[n_block] = sum_block / block_size
-            n_block += 1
-            sum_block = 0.0
+# def mom_func(x, block_size):
+#     """compute median of means of a sequence of numbers x with given block size"""
+#     n = x.shape[0]
+#     n_blocks = int(n // block_size)
+#     last_block_size = n % block_size
+#     blocks_means = np.zeros(int(n_blocks + int(last_block_size > 0)))
+#     sum_block = 0.0
+#     n_block = 0
+#     for i in range(n):
+#         # Update current sum in the block
+#         # print(sum_block, "+=", x[i])
+#         sum_block += x[i]
+#         if (i != 0) and ((i + 1) % block_size == 0):
+#             # It's the end of the block, save its mean
+#             # print("sum_block: ", sum_block)
+#             blocks_means[n_block] = sum_block / block_size
+#             n_block += 1
+#             sum_block = 0.0
+#
+#     if last_block_size != 0:
+#         blocks_means[n_blocks] = sum_block / last_block_size
+#
+#     mom = np.median(blocks_means)
+#     return mom#, blocks_means
 
-    if last_block_size != 0:
-        blocks_means[n_blocks] = sum_block / last_block_size
 
-    mom = np.median(blocks_means)
-    return mom#, blocks_means
-
-
-def adaptive_mom_cgd(funs_to_track, x0, step_size, T, steps=None, K_init=adamom_K_init):
+def adaptive_mom_cgd(funs_to_track, x0, step_size, T, steps=None, K_init=15):#adamom_K_init):
     """a mom cgd algorithm that adapts block sizes coordinatewise according to changes in coord. gradient variance estimates"""
     x = x0
     K = K_init * np.ones(n_features)
@@ -166,11 +167,11 @@ def adaptive_mom_cgd(funs_to_track, x0, step_size, T, steps=None, K_init=adamom_
         gradient_error = 0.0
         for i in np.random.permutation(x0.shape[0]):
             sample_gradients = np.multiply((X @ x - y)[:, np.newaxis], X)
-            vars[i] = estimate_sigma(sample_gradients[:,i])
-            K[i] = int(min(n_samples//2, max(K_init*((vars_init[i]/vars[i])**2) , K_init)))
-            grad_i = mom_func(sample_gradients[:,i], n_samples // K[i])
+            # vars[i] = estimate_sigma(sample_gradients[:,i])
+            # K[i] = int(min(n_samples//2, max(K_init*((vars_init[i]/vars[i])**2) , K_init)))
+            #grad_i = mom_func(sample_gradients[:,i], n_samples // K[i])
             #K[i] = int(min(n_samples//2, max(0.1*n_samples/(vars[i]**2) , K_init)))
-            #grad_i = mom_func(sample_gradients[:, i], n_samples // (K_init))
+            grad_i = mom_func(sample_gradients[:, i], n_samples // (K_init))
             gradient_error += (grad_i - true_gradient(x)[i])**2
 
             x[i] -= step_size * steps[i] * grad_i
@@ -268,7 +269,7 @@ for rep in range(n_repeats):
     optimal_risk = minimize(true_risk, np.zeros(n_features), jac=true_gradient).fun
     optimal_empirical_risk = minimize(empirical_risk, np.zeros(n_features), jac=empirical_gradient).fun
 
-    def excess_empirical_risk(w): return empirical_risk((w ).flatten()) - optimal_empirical_risk
+    def excess_empirical_risk(w): return empirical_risk(w.flatten()) - optimal_empirical_risk
     def excess_risk(w): return true_risk(w.flatten()) - optimal_risk
 
     outputs = {}
@@ -278,8 +279,9 @@ for rep in range(n_repeats):
     for gradient in [empirical_gradient, true_gradient, Holland_gradient]:
         outputs[gradient.__name__] = gradient_descent([excess_empirical_risk, excess_risk], np.zeros(n_features), gradient, step_size, T)
 
-    MOM_regressor = MOMRegressor(tol=1e-17, max_iter=T, fit_intercept=True, strategy="mom", thresholding=mom_thresholding, step_size=step_size, block_size=MOMreg_block_size)
-    MOM_regressor.fit(X, y, tracked_funs=[lambda x : excess_empirical_risk(x[1]), lambda x : excess_risk(x[1])])
+    MOM_regressor = MOMRegressor(tol=1e-17, max_iter=T, fit_intercept=False, strategy="mom", thresholding=mom_thresholding, step_size=step_size, block_size=MOMreg_block_size, batch_size=500)
+    MOM_regressor.fit(X, y, tracked_funs=[excess_empirical_risk, excess_risk])
+    #MOM_regressor.fit(X, y, tracked_funs=[lambda x : excess_empirical_risk(x[1]), lambda x : excess_risk(x[1])])
 
     outputs["mom_cgd"] = MOM_regressor.optimization_result_.tracked_funs
     #logging.info("running MOM cgd")

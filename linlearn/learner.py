@@ -21,7 +21,7 @@ from sklearn.utils.extmath import safe_sparse_dot
 
 from .loss import losses_factory, steps_coordinate_descent
 from .penalty import penalties_factory
-from .solver import coordinate_gradient_descent, History, solvers_factory
+from .solver import coordinate_gradient_descent, batched_coordinate_gradient_descent, History, solvers_factory
 from .strategy import strategies_factory
 
 
@@ -55,7 +55,8 @@ class MOMBase(ClassifierMixin, BaseEstimator):
         warm_start=False,
         n_jobs=None,
         l1_ratio=0.5,
-        thresholding=False
+        thresholding=False,
+        batch_size=0
     ):
         self.penalty = penalty
         self.C = C
@@ -73,6 +74,7 @@ class MOMBase(ClassifierMixin, BaseEstimator):
         self.n_jobs = n_jobs
         self.l1_ratio = l1_ratio
         self.thresholding=thresholding
+        self.batch_size = batch_size
 
         self.history_ = None
         self.intercept_ = None
@@ -165,6 +167,17 @@ class MOMBase(ClassifierMixin, BaseEstimator):
             self._block_size = val
 
     @property
+    def batch_size(self):
+        return self._batch_size
+
+    @batch_size.setter
+    def batch_size(self, val):
+        if not isinstance(val, int) or val < 0:
+            raise ValueError("batch_size must be a non negative integer; got (batch_size=%r)" % val)
+        else:
+            self._batch_size = val
+
+    @property
     def solver(self):
         return self._solver
 
@@ -248,7 +261,7 @@ class MOMBase(ClassifierMixin, BaseEstimator):
         # Get the strategy
         strategy_factory = strategies_factory[self.strategy]
         strategy = strategy_factory(
-            loss, X, y, self.fit_intercept, n_samples_in_block=n_samples_in_block
+            loss, self.fit_intercept, n_samples_in_block=n_samples_in_block
         )
 
         if self.solver == "cgd":
@@ -257,22 +270,39 @@ class MOMBase(ClassifierMixin, BaseEstimator):
             steps = self.step_size * self._steps
             self.history_ = History("CGD", self.max_iter, self.verbose)
 
-            def solve(w, tracked_funs=None):
-                return coordinate_gradient_descent(
-                    loss,
-                    penalty,
-                    strategy,
-                    w,
-                    X,
-                    y,
-                    self.fit_intercept,
-                    steps,
-                    self.max_iter,
-                    self.tol,
-                    self.history_,
-                    thresholding=self.thresholding,
-                    tracked_funs=tracked_funs
-                )
+            if self.batch_size == 0:
+                def solve(w, tracked_funs=None):
+                    return coordinate_gradient_descent(
+                        loss,
+                        penalty,
+                        strategy,
+                        w,
+                        X,
+                        y,
+                        self.fit_intercept,
+                        steps,
+                        self.max_iter,
+                        self.tol,
+                        self.history_,
+                        thresholding=self.thresholding,
+                        tracked_funs=tracked_funs
+                    )
+            else:
+                def solve(w, tracked_funs=None):
+                    return batched_coordinate_gradient_descent(
+                        loss,
+                        penalty,
+                        strategy,
+                        w,
+                        X,
+                        y,
+                        self.fit_intercept,
+                        steps,
+                        self.batch_size,
+                        self.max_iter,
+                        self.tol,
+                        tracked_funs=tracked_funs
+                    )
 
             return solve
 
@@ -451,7 +481,8 @@ class BinaryClassifier(MOMBase, ClassifierMixin):
         warm_start=False,
         n_jobs=None,
         l1_ratio=0.5,
-        thresholding=False
+        thresholding=False,
+        batch_size=0
     ):
         super(BinaryClassifier, self).__init__(
             penalty=penalty,
@@ -469,7 +500,8 @@ class BinaryClassifier(MOMBase, ClassifierMixin):
             warm_start=warm_start,
             n_jobs=n_jobs,
             l1_ratio=l1_ratio,
-            thresholding=thresholding
+            thresholding=thresholding,
+            batch_size=batch_size
         )
 
         self.class_weight = class_weight
@@ -636,7 +668,8 @@ class MOMRegressor(MOMBase, RegressorMixin):
         warm_start=False,
         n_jobs=None,
         l1_ratio=0.5,
-        thresholding=False
+        thresholding=False,
+        batch_size=0
     ):
         super(MOMRegressor, self).__init__(
             penalty=penalty,
@@ -654,7 +687,8 @@ class MOMRegressor(MOMBase, RegressorMixin):
             warm_start=warm_start,
             n_jobs=n_jobs,
             l1_ratio=l1_ratio,
-            thresholding=thresholding
+            thresholding=thresholding,
+            batch_size=batch_size
         )
 
     def predict(self, X):

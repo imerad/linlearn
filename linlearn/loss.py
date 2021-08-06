@@ -66,17 +66,17 @@ def steps_coordinate_descent(loss_lip, X, block_size, fit_intercept):
     # def col_squared_norm_dense(X, fit_intercept):
     n_samples, n_features = X.shape
     lip_const = loss_lip()
-    block_means = np.empty(n_samples // block_size + int(n_samples % block_size > 0), dtype=X.dtype)
+    #block_means = np.empty(n_samples // block_size + int(n_samples % block_size > 0), dtype=X.dtype)
     if fit_intercept:
         steps = np.zeros(n_features + 1, dtype=X.dtype)
         # First squared norm is n_samples
         steps[0] = 1 / lip_const
         for j in prange(1, n_features + 1):
-            steps[j] = median_of_means(X[:, j - 1] ** 2, block_size, block_means) / lip_const
+            steps[j] = median_of_means(X[:, j - 1] ** 2, block_size) / lip_const
     else:
         steps = np.zeros(n_features, dtype=X.dtype)
         for j in prange(n_features):
-            steps[j] = median_of_means(X[:, j] ** 2, block_size, block_means) / lip_const
+            steps[j] = median_of_means(X[:, j] ** 2, block_size) / lip_const
     # print(steps)
     # steps /= n_samples
     return steps

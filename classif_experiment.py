@@ -149,6 +149,8 @@ linlearn_tracked_funs = [linlearn_train_loss, linlearn_test_loss]
 
 col_try, col_algo, col_train_err, col_test_err = [], [], [], []
 
+print(len(y_train))
+print(len(y_test))
 for rep in range(n_repeats):
     if not save_results:
         logging.info("WARNING : results will NOT be saved at the end of this session")
