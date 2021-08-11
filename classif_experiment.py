@@ -32,7 +32,7 @@ logging.info(64*"=")
 m_SVRG = 10
 step_size = 0.01
 
-max_iter = 150
+max_iter = 15
 fit_intercept = True
 
 n_samples = 2000
@@ -121,6 +121,18 @@ def linlearn_test_loss(w): return objective(X_test, y_test, w, fit_intercept=fit
 linlearn_tracked_funs = [linlearn_train_loss, linlearn_test_loss]
 
 
+def tmean_cgd(X_train, y_train, batch_size=500):
+    mom_logreg = MultiClassifier(tol=1e-17, max_iter=max_iter, strategy="tmean", fit_intercept=fit_intercept,
+                              thresholding=False, step_size=step_size*batch_size/1000, loss="multilogistic", batch_size=batch_size)
+    mom_logreg.fit(X_train, y_train, tracked_funs=linlearn_tracked_funs)
+
+    n_iter = len(mom_logreg.optimization_result_.tracked_funs[0])
+    n_batches = X_train.shape[0] // batch_size + int(X_train.shape[0] % batch_size > 0)
+    gradient_counts = [(i // n_batches)*X_train.shape[0] + (i % n_batches)*batch_size for i in range(n_iter)]
+
+    return mom_logreg.optimization_result_.tracked_funs + [gradient_counts]
+
+
 def catoni_cgd(X_train, y_train, batch_size=500):
     mom_logreg = MultiClassifier(tol=1e-17, max_iter=max_iter, strategy="catoni", fit_intercept=fit_intercept,
                               thresholding=False, step_size=step_size*batch_size/1000, loss="multilogistic", batch_size=batch_size)
@@ -146,14 +158,14 @@ def mom_cgd(X_train, y_train, batch_size=500):
     return mom_logreg.optimization_result_.tracked_funs + [gradient_counts]
 
 
-def SVRG(X, y, grad, m, w0=None, T=max_iter*m_SVRG, fit_intercept=fit_intercept, tracked_funs=tracked_funs):
+def SVRG(X, y, grad, m, w0=None, T=max_iter, fit_intercept=fit_intercept, tracked_funs=tracked_funs):
     if w0 is None:
         w0 = np.zeros((X.shape[1] + int(fit_intercept), y.shape[1]-1))
     w_tilde = w0
     wt = w0
     step = step_size*(X.shape[0]/m + 2)/1000
     tracks = [[obj(w0)] for obj in tracked_funs] + [[0]]
-    for i in range(T//m + 1):
+    for i in range((T*500)//(X.shape[0] + 2*m) + 1):
         mu = grad(X, y, w_tilde, fit_intercept=fit_intercept)
         additional_gradients = X.shape[0]
         for j in range(m):
@@ -283,6 +295,9 @@ for rep in range(n_repeats):
     logging.info("running catoni cgd")
     outputs["catoni_cgd"] = catoni_cgd(X_train, y_train)
 
+    logging.info("running tmean cgd")
+    outputs["tmean_cgd"] = tmean_cgd(X_train, y_train)
+
     logging.info("saving repetition data ...")
 
     for alg in outputs.keys():
@@ -340,13 +355,11 @@ plt.legend(
 #g.fig.subplots_adjust(top=0.9)
 #g.fig.suptitle('n=%d , noise=%s , $\\sigma$ = %.2f, block_size=%.2f, w_star_dist=%s' % (n_samples, noise_dist, noise_sigma[noise_dist], MOMreg_block_size, w_star_dist))
 
-print("save_fig is %r" % save_fig)
-print("figure saving not implemented yet")
 plt.show()
 
 if save_fig:
     now = datetime.now().strftime("%Y-%m-%d-%H:%M:%S")
     #specs = 'n%d_%s%.2f_block_size=%.2f_w_dist=%s' % (n_samples, noise_dist, noise_sigma[noise_dist], MOMreg_block_size, w_star_dist)
-    fig_file_name = ""#"exp_archives/linreg/" + specs + now + ".pdf"
+    fig_file_name = "exp_archives/classif/" + dataset + now + ".pdf"
     # g.fig.savefig(fname=fig_file_name)#, bbox_inches='tight')
     logging.info("Saved figure into file : %s" % fig_file_name)

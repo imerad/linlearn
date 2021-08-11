@@ -374,8 +374,6 @@ def grad_coordinate_tmean(
     inner_products,
     fit_intercept,
 ):
-    """Computation of the derivative of the loss with respect to a coordinate using the
-    catoni stategy."""
     return trimmed_mean(grad_coordinate_per_sample(loss_derivative, j, X, y, inner_products, fit_intercept))
 
 

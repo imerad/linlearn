@@ -383,8 +383,8 @@ def batched_coordinate_gradient_descent(
         w_size = w.shape[0]*w.shape[1]
 
     n_batches = n_samples //batch_size + int(n_samples % batch_size > 0)
-    #X_batches = [X[i*batch_size:(i+1)*batch_size] for i in range(n_batches)]
-    #y_batches = [y[i*batch_size:(i+1)*batch_size] for i in range(n_batches)]
+    X_batches = tuple(np.ascontiguousarray(X[i*batch_size:(i+1)*batch_size]) for i in range(n_batches))
+    y_batches = tuple(y[i*batch_size:(i+1)*batch_size] for i in range(n_batches))
 
     inner_products = np.empty((batch_size, n_w_cols), dtype=X.dtype)
 
@@ -403,14 +403,16 @@ def batched_coordinate_gradient_descent(
         # This implementation assumes dense data and a separable prox_old
         # TODO: F order C order
 
-        #X_batch = X_batches[batch_idx]
-        #y_batch = y_batches[batch_idx]
+        X_batch = X_batches[batch_idx]
+        y_batch = y_batches[batch_idx]
         effective_batch_size = batch_size - max(0, (batch_idx+1)*batch_size - X.shape[0])
 
         if fit_intercept:
-            decision_function(X[batch_idx*batch_size:(batch_idx+1)*batch_size], w[1], w[0], out=inner_products[:effective_batch_size])
+            # decision_function(X[batch_idx*batch_size:(batch_idx+1)*batch_size], w[1], w[0], out=inner_products[:effective_batch_size])
+            decision_function(X_batch, w[1], w[0], out=inner_products[:effective_batch_size])
         else:
-            decision_function(X[batch_idx*batch_size:(batch_idx+1)*batch_size], w, 0, out=inner_products[:effective_batch_size])
+            # decision_function(X[batch_idx*batch_size:(batch_idx+1)*batch_size], w, 0, out=inner_products[:effective_batch_size])
+            decision_function(X_batch, w, 0, out=inner_products[:effective_batch_size])
 
         max_abs_delta = 0.0
         max_abs_weight = 0.0
@@ -419,7 +421,7 @@ def batched_coordinate_gradient_descent(
             j = (j // n_w_cols, j % n_w_cols)
             # TODO: pour integrer mom il suffit de passer aussi en argument grad_coordinate mais les protoypes sont differents...
 
-            grad_j = grad_coordinate(X[batch_idx*batch_size:(batch_idx+1)*batch_size,:], y[batch_idx*batch_size:(batch_idx+1)*batch_size], j, inner_products[:effective_batch_size])
+            grad_j = grad_coordinate(X_batch, y_batch, j, inner_products[:effective_batch_size])
 
             if fit_intercept:
                 if j[0] == 0:
@@ -456,10 +458,10 @@ def batched_coordinate_gradient_descent(
                         inner_products[i, j[1]] += delta_j
                 else:
                     for i in range(effective_batch_size):
-                        inner_products[i, j[1]] += delta_j * X[i, j[0] - 1]
+                        inner_products[i, j[1]] += delta_j * X_batch[i, j[0] - 1]
             else:
                 for i in range(effective_batch_size):
-                    inner_products[i, j[1]] += delta_j * X[i, j[0]]
+                    inner_products[i, j[1]] += delta_j * X_batch[i, j[0]]
 
         return max_abs_delta, max_abs_weight
 
