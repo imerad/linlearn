@@ -270,7 +270,7 @@ class MOMBase(ClassifierMixin, BaseEstimator):
             steps = self.step_size * self._steps
             self.history_ = History("CGD", self.max_iter, self.verbose)
 
-            if self.batch_size == 0:
+            if self.batch_size == 0 or self.batch_size >= n_samples:
                 def solve(w, tracked_funs=None):
                     return coordinate_gradient_descent(
                         loss,
@@ -741,7 +741,8 @@ class MultiClassifier(MOMBase, ClassifierMixin):
         warm_start=False,
         n_jobs=None,
         l1_ratio=0.5,
-        thresholding=False
+        thresholding=False,
+        batch_size=0
     ):
         super(MultiClassifier, self).__init__(
             penalty=penalty,
@@ -759,7 +760,8 @@ class MultiClassifier(MOMBase, ClassifierMixin):
             warm_start=warm_start,
             n_jobs=n_jobs,
             l1_ratio=l1_ratio,
-            thresholding=thresholding
+            thresholding=thresholding,
+            batch_size=batch_size
         )
 
         self.class_weight = class_weight

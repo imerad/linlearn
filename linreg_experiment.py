@@ -1,5 +1,5 @@
 from linlearn import MOMRegressor
-from linlearn.catoni import Holland_catoni_estimator, estimate_sigma
+from linlearn.robust_means import Holland_catoni_estimator, estimate_sigma, alg2, gmom
 from linlearn.strategy import median_of_means as mom_func
 import numpy as np
 import logging
@@ -31,7 +31,7 @@ if not save_results:
 
 n_repeats = 10
 
-n_samples = 1500
+n_samples = 500
 n_features = 5
 
 n_outliers = 10
@@ -39,24 +39,27 @@ outliers = False
 
 mom_thresholding = True
 mom_thresholding = False
-MOMreg_block_size = 0.07
-adamom_K_init = 20
+MOMreg_block_size = 0.04
+adamom_K_init = int(1/MOMreg_block_size)
 
 catoni_thresholding = True
 catoni_thresholding = False
 
+prasad_delta = 0.01
+
 random_seed = 43
 
-noise_sigma = {"gaussian": 20, "lognormal": 1.75, "pareto": 10}
+noise_sigma = {"gaussian": 20, "lognormal": 1.75, "pareto": 30}
 
+X_centered = False
 Sigma_X = np.diag(np.arange(1, n_features+1))
-mu_X = np.ones(n_features)
+mu_X = np.zeros(n_features) if X_centered else np.ones(n_features)
 
 w_star_dist = "uniform"
 noise_dist = "lognormal"
 
 step_size = 0.01
-T = 200
+T = 300
 
 logging.info("Lauching experiment with parameters : \n n_repeats = %d , n_samples = %d , n_features = %d , outliers = %r" % (n_repeats, n_samples, n_features, outliers))
 if outliers:
@@ -68,6 +71,27 @@ logging.info("w_star_dist = %s , noise_dist = %s , sigma = %f" % (w_star_dist, n
 logging.info("step_size = %f , T = %d" % (step_size, T))
 
 rng = np.random.RandomState(random_seed) ## Global random generator
+
+# def gmom(xs, tol=1e-7):
+#     y = np.average(xs, axis=0)
+#     eps = 1e-10
+#     delta = 1
+#     niter = 0
+#     while delta > tol:
+#         xsy = xs - y
+#         dists = np.linalg.norm(xsy, axis=1)
+#         inv_dists = 1 / dists
+#         mask = dists < eps
+#         inv_dists[mask] = 0
+#         nb_too_close = (mask).sum()
+#         ry = np.linalg.norm(np.dot(inv_dists, xsy))
+#         cst = nb_too_close / ry
+#         y_new = max(0, 1 - cst) * np.average(xs, axis=0, weights=inv_dists) + min(1, cst) * y
+#         delta = np.linalg.norm(y - y_new)
+#         y = y_new
+#         niter += 1
+#     # print(niter)
+#     return y
 
 def gen_w_star(d, dist="normal"):
     if dist =="normal":
@@ -93,7 +117,7 @@ def generate_lognormal_noise_sample(n_samples, sigma=1.75):
 
     return noise, expect_noise, noise_2nd_moment
 
-def generate_pareto_noise_sample(n_samples, sigma=10, pareto=3):
+def generate_pareto_noise_sample(n_samples, sigma=10, pareto=2.05):
     noise = sigma * rng.pareto(pareto, n_samples)
     expect_noise = (sigma)/(pareto - 1)
     noise_2nd_moment = expect_noise**2 + (sigma**2) * pareto/(((pareto-1)**2)*(pareto-2))
@@ -101,12 +125,28 @@ def generate_pareto_noise_sample(n_samples, sigma=10, pareto=3):
     return noise, expect_noise, noise_2nd_moment
 
 def Holland_gradient(w):
-    """compute the grandient used by Holland et al."""
+    """compute the gradient used by Holland et al."""
     sample_gradients = np.multiply((X @ w - y)[:,np.newaxis], X)
     catoni_avg_grad = np.zeros_like(w)
     for i in range(w.shape[0]):
         catoni_avg_grad[i] = Holland_catoni_estimator(sample_gradients[:,i])
     return catoni_avg_grad
+
+def Prasad_HeavyTail_gradient(w, delta=prasad_delta):
+    n_blocks = 1 + int(3.5*np.log(1/delta))
+    block_size = n_samples // n_blocks
+    sample_gradients = np.multiply((X @ w - y)[:,np.newaxis], X)
+    permutation = np.random.permutation(n_samples)
+    block_means = []
+    for i in range(n_blocks):
+        block_means.append(np.mean(sample_gradients[permutation[i*block_size:(i+1)*block_size],:], axis = 0))
+    return gmom(np.array(block_means))
+
+def Prasad_outliers_gradient(w, eps=0.05, delta=prasad_delta):
+
+    sample_gradients = np.multiply((X @ w - y)[:,np.newaxis], X)
+
+    return alg2(sample_gradients, eps, delta)[0]
 
 def catoni_cgd_descent(funs_to_track, x0, step_size, T, steps=None):
     """run coordinate gradient descent using catoni estimates for the gradient coordinates instead of MOM"""
@@ -249,7 +289,8 @@ for rep in range(n_repeats):
     #outliers
     if outliers:
         X = np.concatenate((X, np.ones((n_outliers, n_features))), axis=0)
-        y = np.concatenate((y, 10*np.ones(n_outliers)*np.max(np.abs(y))))
+        #y = np.concatenate((y, 10*np.ones(n_outliers)*np.max(np.abs(y))))
+        y = np.concatenate((y, 10 * (2*np.random.randint(2, size=n_outliers)-1) * np.max(np.abs(y))))
 
     logging.info("generating risks and gradients ...")
     def empirical_risk(w):
@@ -279,7 +320,7 @@ for rep in range(n_repeats):
     for gradient in [empirical_gradient, true_gradient, Holland_gradient]:
         outputs[gradient.__name__] = gradient_descent([excess_empirical_risk, excess_risk], np.zeros(n_features), gradient, step_size, T)
 
-    MOM_regressor = MOMRegressor(tol=1e-17, max_iter=T, fit_intercept=False, strategy="mom", thresholding=mom_thresholding, step_size=step_size, block_size=MOMreg_block_size, batch_size=500)
+    MOM_regressor = MOMRegressor(tol=1e-17, max_iter=T, fit_intercept=False, strategy="mom", thresholding=mom_thresholding, step_size=step_size, block_size=MOMreg_block_size)
     MOM_regressor.fit(X, y, tracked_funs=[excess_empirical_risk, excess_risk])
     #MOM_regressor.fit(X, y, tracked_funs=[lambda x : excess_empirical_risk(x[1]), lambda x : excess_risk(x[1])])
 
@@ -295,6 +336,12 @@ for rep in range(n_repeats):
     #outputs["catoni_cgd"] = catoni_cgd_descent([excess_empirical_risk, excess_risk], np.zeros(n_features), step_size, T, steps=MOM_regressor._steps)
     #logging.info("running adaptive MOM cgd")
     outputs["adaptive_mom_cgd"] = adaptive_mom_cgd([excess_empirical_risk, excess_risk], np.zeros(n_features), step_size, T, steps=MOM_regressor._steps)
+    for gradient in [Prasad_HeavyTail_gradient, Prasad_outliers_gradient]:
+        outputs[gradient.__name__] = gradient_descent([excess_empirical_risk, excess_risk], np.zeros(n_features), gradient, step_size, T)
+
+    tmean_regressor = MOMRegressor(tol=1e-17, max_iter=T, fit_intercept=False, strategy="tmean", step_size=step_size)
+    tmean_regressor.fit(X, y, tracked_funs=[excess_empirical_risk, excess_risk])
+    outputs["tmean_cgd"] = tmean_regressor.optimization_result_.tracked_funs
 
     logging.info("saving repetition data ...")
     for tt in range(T):
@@ -306,6 +353,7 @@ for rep in range(n_repeats):
                 col_metric.append(metric)
                 col_val.append(outputs[alg][ind_metric][tt])
 
+logging.info("Creating pandas DataFrame")
 data = pd.DataFrame({"t":col_t, "repeat":col_try, "algo":col_algo, "metric":col_metric, "value":col_val})
 
 if save_results:
@@ -316,6 +364,8 @@ if save_results:
         pickle.dump({"datetime": now, "results": data}, f)
 
     logging.info("Saved results in file %s" % filename)
+
+logging.info("Plotting ...")
 
 g = sns.FacetGrid(
     data, col="metric", height=4, legend_out=True
@@ -346,7 +396,7 @@ plt.legend(
     #fontsize=14,
 )
 g.fig.subplots_adjust(top=0.9)
-g.fig.suptitle('n=%d , noise=%s , $\\sigma$ = %.2f, block_size=%.2f, w_star_dist=%s' % (n_samples, noise_dist, noise_sigma[noise_dist], MOMreg_block_size, w_star_dist))
+g.fig.suptitle('n=%d , noise=%s , $\\sigma$ = %.2f, block_size=%.2f, w_star_dist=%s , outliers=%r , X_centered=%r' % (n_samples, noise_dist, noise_sigma[noise_dist], MOMreg_block_size, w_star_dist, outliers, X_centered))
 
 plt.show()
 

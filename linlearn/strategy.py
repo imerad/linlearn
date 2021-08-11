@@ -2,8 +2,8 @@ import numpy as np
 from numpy.random import permutation
 from numba import njit, prange
 from collections import namedtuple
-from .catoni import Holland_catoni_estimator
-
+from .robust_means import Holland_catoni_estimator
+from math import ceil
 
 # TODO: definir ici une strategy
 
@@ -121,6 +121,11 @@ def median_of_means(x, block_size):
     mom = np.median(block_means)
     return mom#, blocks_means
 
+@njit
+def trimmed_mean(x, delta=0.01):
+    x.sort()
+    n_excluded = ceil(5*np.log(8/delta))
+    return np.mean(x[n_excluded:-n_excluded])
 
 # x = np.arange(0, 12).astype("float64")
 # x = np.random.permutation(x)
@@ -360,9 +365,34 @@ def catoni_strategy_factory(loss, fit_intercept, **kwargs):
         grad_coordinate=grad_coordinate, n_samples_in_block=None, name="catoni"
     )
 
+@njit
+def grad_coordinate_tmean(
+    loss_derivative,
+    j,
+    X,
+    y,
+    inner_products,
+    fit_intercept,
+):
+    """Computation of the derivative of the loss with respect to a coordinate using the
+    catoni stategy."""
+    return trimmed_mean(grad_coordinate_per_sample(loss_derivative, j, X, y, inner_products, fit_intercept))
 
 
-strategies_factory = {"erm": erm_strategy_factory, "mom": mom_strategy_factory, "catoni": catoni_strategy_factory}
+def tmean_strategy_factory(loss, fit_intercept, **kwargs):
+    @njit
+    def grad_coordinate(X, y, j, inner_products):
+        return grad_coordinate_tmean(
+            loss.derivative, j, X, y, inner_products, fit_intercept
+        )
+
+    return Strategy(
+        grad_coordinate=grad_coordinate, n_samples_in_block=None, name="tmean"
+    )
+
+
+
+strategies_factory = {"erm": erm_strategy_factory, "mom": mom_strategy_factory, "catoni": catoni_strategy_factory, "tmean": tmean_strategy_factory}
 
 # erm_strategy = Strategy(grad_coordinate=grad_coordinate_erm)
 

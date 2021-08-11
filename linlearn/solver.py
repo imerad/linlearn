@@ -10,7 +10,7 @@ from collections import namedtuple
 
 from .strategy import grad_coordinate_erm, decision_function, grad_coordinate_per_sample, median_of_means
 from .penalty import l1_apply_single
-from .catoni import estimate_sigma
+from .robust_means import estimate_sigma
 
 # TODO: good default for tol when using duality gap
 # TODO: step=float or {'best', 'auto'}
@@ -247,14 +247,14 @@ def coordinate_gradient_descent(
     thresholds = compute_thresholds() if thresholding and strategy.name!="erm" else None
 
     for cycle in range(1, max_iter + 1):
+        if tracked_funs:
+            for i, f in enumerate(tracked_funs):
+                tracks[i][cycle-1] = f(w)
+
         # Sample a permutation of the coordinates
         coordinates = permutation(w_size)
         # Launch the coordinates cycle
         max_abs_delta, max_abs_weight = coordinate_gradient_descent_cycle(w, inner_products, coordinates, thresholds, cycle)
-
-        if tracked_funs:
-            for i, f in enumerate(tracked_funs):
-                tracks[i][cycle-1] = f(w)
 
         # Compute the new value of objective
         obj = objective(w)
@@ -383,8 +383,8 @@ def batched_coordinate_gradient_descent(
         w_size = w.shape[0]*w.shape[1]
 
     n_batches = n_samples //batch_size + int(n_samples % batch_size > 0)
-    X_batches = [X[i*batch_size:(i+1)*batch_size] for i in range(n_batches)]
-    y_batches = [y[i*batch_size:(i+1)*batch_size] for i in range(n_batches)]
+    #X_batches = [X[i*batch_size:(i+1)*batch_size] for i in range(n_batches)]
+    #y_batches = [y[i*batch_size:(i+1)*batch_size] for i in range(n_batches)]
 
     inner_products = np.empty((batch_size, n_w_cols), dtype=X.dtype)
 
@@ -450,19 +450,30 @@ def batched_coordinate_gradient_descent(
             if abs_w_j_new > max_abs_weight:
                 max_abs_weight = abs_w_j_new
 
+            if fit_intercept:
+                if j[0] == 0:
+                    for i in range(effective_batch_size):
+                        inner_products[i, j[1]] += delta_j
+                else:
+                    for i in range(effective_batch_size):
+                        inner_products[i, j[1]] += delta_j * X[i, j[0] - 1]
+            else:
+                for i in range(effective_batch_size):
+                    inner_products[i, j[1]] += delta_j * X[i, j[0]]
+
         return max_abs_delta, max_abs_weight
 
 
     for cycle in range(1, max_iter + 1):
+        if tracked_funs:
+            for i, f in enumerate(tracked_funs):
+                tracks[i][cycle-1] = f(w)
+
         # Sample a permutation of the coordinates
         coordinates = permutation(w_size)
         # Launch the coordinates cycle
 
         max_abs_delta, max_abs_weight = coordinate_gradient_descent_cycle(w, inner_products, coordinates, (cycle-1)%n_batches)
-
-        if tracked_funs:
-            for i, f in enumerate(tracked_funs):
-                tracks[i][cycle-1] = f(w)
 
         if max_abs_weight == 0.0:
             print("cycle: ", cycle)

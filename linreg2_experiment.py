@@ -1,5 +1,5 @@
 from linlearn import MOMRegressor
-from linlearn.catoni import Holland_catoni_estimator, standard_catoni_estimator, estimate_sigma
+from linlearn.robust_means import Holland_catoni_estimator, standard_catoni_estimator, estimate_sigma
 import numpy as np
 import logging
 import pickle
