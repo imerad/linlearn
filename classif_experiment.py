@@ -32,10 +32,10 @@ logging.info(64*"=")
 m_SVRG = 10
 step_size = 0.01
 
-max_iter = 15
+max_iter = 300
 fit_intercept = True
 
-n_samples = 2000
+n_samples = 20000
 n_repeats = 1
 
 logging.info("Parameters are : n_repeats = %d , n_samples = %d , max_ter = %d , fit_intercept=%r , m_SVRG = %d" % (n_repeats, n_samples, max_iter, fit_intercept, m_SVRG))
