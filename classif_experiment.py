@@ -10,7 +10,15 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import pandas as pd
 from scipy.special import logsumexp, softmax
+import os
+import itertools
+from tqdm import tqdm
+import joblib, contextlib
+def ensure_directory(directory):
+    if not os.path.exists(directory):
+        os.makedirs(directory)
 
+ensure_directory('exp_archives/')
 
 file_handler = logging.FileHandler(filename='exp_archives/classif_exp.log')
 stdout_handler = logging.StreamHandler(sys.stdout)
@@ -20,25 +28,25 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S", handlers=handlers
 )
 
-save_results = False
-save_fig= False
+save_results = True
+save_fig= True
 
 dataset="MNIST"
 
 logging.info(64*"=")
-logging.info("Running new experiment session with dataset : %s" % dataset)
+logging.info("Running new experiment session ON GPU with dataset : %s" % dataset)
 logging.info(64*"=")
 
-m_SVRG = 10
+m_SVRG = 50
 step_size = 0.01
 
-max_iter = 300
+max_iter = 120
 fit_intercept = True
 
-n_samples = 20000
-n_repeats = 1
+n_samples = None
+n_repeats = 5
 
-logging.info("Parameters are : n_repeats = %d , n_samples = %d , max_ter = %d , fit_intercept=%r , m_SVRG = %d" % (n_repeats, n_samples, max_iter, fit_intercept, m_SVRG))
+logging.info("Parameters are : n_repeats = %d , n_samples = %d , max_ter = %d , fit_intercept=%r , m_SVRG = %d" % (n_repeats, n_samples or 0, max_iter, fit_intercept, m_SVRG))
 
 if not save_results:
     logging.info("WARNING : results will NOT be saved at the end of this session")
@@ -81,7 +89,7 @@ X_test = _images(mnist_test_images_file)
 y_test = _labels(mnist_test_labels_file)
 
 
-def objective(X, y, w, fit_intercept=fit_intercept, lnlearn=False):
+def sample_objectives(X, y, w, fit_intercept=fit_intercept, lnlearn=False):
     if fit_intercept:
         w0 = w[0] if lnlearn else w[0,:]
         w1 = w[1] if lnlearn else w[1:,:]
@@ -90,8 +98,12 @@ def objective(X, y, w, fit_intercept=fit_intercept, lnlearn=False):
         w1 = w
     scores = X @ w1 + w0
     scores = np.hstack((scores, np.zeros((X.shape[0], 1))))
-    obj = (-scores[np.arange(X.shape[0]), np.argmax(y, axis=1)] + logsumexp(scores, axis=1)).mean()
+    obj = (-scores[np.arange(X.shape[0]), np.argmax(y, axis=1)] + logsumexp(scores, axis=1))
     return obj
+
+def objective(X, y, w, fit_intercept=fit_intercept, lnlearn=False):
+    return sample_objectives(X, y, w, fit_intercept=fit_intercept, lnlearn=lnlearn).mean()
+
 
 def gradient(X, y, w, fit_intercept=fit_intercept):
     scores = X @ w[1:,:] + w[0,:] if fit_intercept else X @ w
@@ -165,7 +177,7 @@ def SVRG(X, y, grad, m, w0=None, T=max_iter, fit_intercept=fit_intercept, tracke
     wt = w0
     step = step_size*(X.shape[0]/m + 2)/1000
     tracks = [[obj(w0)] for obj in tracked_funs] + [[0]]
-    for i in range((T*500)//(X.shape[0] + 2*m) + 1):
+    for i in tqdm(range((T*500)//(X.shape[0] + 2*m) + 1), desc="SVRG"):
         mu = grad(X, y, w_tilde, fit_intercept=fit_intercept)
         additional_gradients = X.shape[0]
         for j in range(m):
@@ -186,7 +198,7 @@ def SGD(X, y, grad, w0=None, T=max_iter, batch_size=500, fit_intercept=fit_inter
     wt = w0
     step = step_size*batch_size/1000
     tracks = [[obj(wt)] for obj in tracked_funs] + [[0]]
-    for i in range(T):
+    for i in tqdm(range(T), desc="SGD"):
         indices = np.random.randint(X.shape[0], size=batch_size)
         wt -= step * grad(X[indices,:], y[indices,:], wt, fit_intercept=fit_intercept)
         for idx, obj in enumerate(tracked_funs):
@@ -201,7 +213,7 @@ def Holland_gd(X, y, w0=None, T=max_iter, batch_size=500, fit_intercept=fit_inte
     wt = w0
     step = step_size*batch_size/1000
     tracks = [[obj(wt)] for obj in tracked_funs] + [[0]]
-    for i in range(T):
+    for i in tqdm(range(T), desc="Holland"):
         indices = np.random.randint(X.shape[0], size=batch_size)
         gradients = sample_gradients(X[indices,:], y[indices,:], wt, fit_intercept=fit_intercept)
         catoni_avg_grad = np.zeros_like(wt)
@@ -224,13 +236,13 @@ def Prasad_heavyTails_gd(X, y, w0=None, T=max_iter, batch_size=500, fit_intercep
     wt = w0
     step = step_size*batch_size/1000
     tracks = [[obj(wt)] for obj in tracked_funs] + [[0]]
-    for i in range(T):
+    for i in tqdm(range(T), desc = "prasad_heavy_tail"):
         indices = np.random.randint(X.shape[0], size=batch_size)
         gradients = sample_gradients(X[indices,:], y[indices,:], wt, fit_intercept=fit_intercept)
         permutation = np.random.permutation(batch_size)
         block_means = []
-        for i in range(n_blocks):
-            block_means.append(np.mean(gradients[permutation[i * block_size:(i + 1) * block_size], :], axis=0).reshape(-1))
+        for j in range(n_blocks):
+            block_means.append(np.mean(gradients[permutation[j * block_size:(j + 1) * block_size], :], axis=0).reshape(-1))
         grad = gmom(np.array(block_means)).reshape(wt.shape)
         wt -= step * grad
 
@@ -239,6 +251,40 @@ def Prasad_heavyTails_gd(X, y, w0=None, T=max_iter, batch_size=500, fit_intercep
         tracks[-1].append(tracks[-1][-1] + batch_size)
 
     return tracks
+
+def Lecue_gd(X, y, w0=None, T=max_iter, batch_size=500, fit_intercept=fit_intercept, tracked_funs=tracked_funs, n_blocks=21):
+    if w0 is None:
+        w0 = np.zeros((X.shape[1] + int(fit_intercept), y.shape[1]-1))
+
+    def argmedian(x):
+        return np.argpartition(x, len(x) // 2)[len(x) // 2]
+    block_size = batch_size // n_blocks
+    wt = w0
+    step = step_size*batch_size/1000
+    tracks = [[obj(wt)] for obj in tracked_funs] + [[0]]
+    for i in tqdm(range(T), desc = "Lecue"):
+        indices = np.random.randint(X.shape[0], size=batch_size)
+        objectives = sample_objectives(X[indices,:], y[indices,:], wt, fit_intercept=fit_intercept)
+
+        perm = np.random.permutation(len(indices))
+        means = [
+            np.mean(objectives[perm[j * block_size: (j + 1) * block_size]])
+            for j in range(n_blocks)
+        ]
+        argmed = argmedian(means)
+        indices = perm[argmed * block_size: (argmed + 1) * block_size]
+        X_subset, y_subset = X[indices, :], y[indices]
+
+
+        grad = gradient(X_subset, y_subset, wt, fit_intercept=fit_intercept)
+        wt -= step * grad
+
+        for idx, obj in enumerate(tracked_funs):
+            tracks[idx].append(obj(wt))
+        tracks[-1].append(tracks[-1][-1] + batch_size)
+
+    return tracks
+
 
 # This one is too computationally heavy
 
@@ -263,42 +309,27 @@ def Prasad_heavyTails_gd(X, y, w0=None, T=max_iter, batch_size=500, fit_intercep
 
 
 
-col_try, col_algo, col_metric, col_ngrads, col_val = [], [], [], [], []
 metrics = ["train_err", "test_err"]
 
-for rep in range(n_repeats):
-    if not save_results:
-        logging.info("WARNING : results will NOT be saved at the end of this session")
-    logging.info(64*'-')
-    logging.info("repeat : %d" % (rep+1))
-    logging.info(64*'-')
-
+def run_repetition(rep):
+    col_try, col_algo, col_metric, col_ngrads, col_val = [], [], [], [], []
 
     outputs = {}
-    logging.info("Running algorithms ...")
-
-    logging.info("running Prasad Heavytails")
+    def announce(x):
+        print(str(rep)+" : "+x+" done")
     outputs["Prasad_heavytails"] = Prasad_heavyTails_gd(X_train, y_train)
-
-    # logging.info("running Prasad outliers")
-    # outputs["Prasad_outliers"] = Prasad_outliers_gd(X_train, y_train)
-
-    logging.info("running SVRG")
+    announce("gmom_gd")
+    outputs["lecue_cgd"] = Lecue_gd(X_train, y_train)
+    announce("lecue_gd")
     outputs["SVRG"] = SVRG(X_train, y_train, gradient, m_SVRG)
-
-    logging.info("running SGD")
+    announce("SVRG")
     outputs["SGD"] = SGD(X_train, y_train, gradient)
-
-    logging.info("running MOM cgd")
+    announce("SGD")
     outputs["mom_cgd"] = mom_cgd(X_train, y_train)
-
-    logging.info("running catoni cgd")
+    announce("mom_cgd")
     outputs["catoni_cgd"] = catoni_cgd(X_train, y_train)
+    announce("catoni_cgd")
 
-    logging.info("running tmean cgd")
-    outputs["tmean_cgd"] = tmean_cgd(X_train, y_train)
-
-    logging.info("saving repetition data ...")
 
     for alg in outputs.keys():
         for ind_metric, metric in enumerate(metrics):
@@ -308,7 +339,16 @@ for rep in range(n_repeats):
                 col_ngrads.append(outputs[alg][-1][i])
                 col_metric.append(metric)
                 col_val.append(outputs[alg][ind_metric][i])
+    return col_try, col_algo, col_ngrads, col_metric, col_val
 
+results = joblib.Parallel(n_jobs=-1)(joblib.delayed(run_repetition)(rep) for rep in range(n_repeats))
+
+
+col_try = list(itertools.chain.from_iterable([x[0] for x in results]))
+col_algo = list(itertools.chain.from_iterable([x[1] for x in results]))
+col_ngrads = list(itertools.chain.from_iterable([x[2] for x in results]))
+col_metric = list(itertools.chain.from_iterable([x[3] for x in results]))
+col_val = list(itertools.chain.from_iterable([x[4] for x in results]))
 
 
 data = pd.DataFrame({"repeat":col_try, "algorithm":col_algo, "metric":col_metric, "value":col_val, "ngrads" : col_ngrads})
@@ -318,6 +358,7 @@ if save_results:
     now = datetime.now().strftime("%Y-%m-%d-%H:%M:%S")
 
     filename = "classif_"+dataset+"_results_" + now + ".pickle"
+    ensure_directory("exp_archives/classif/")
     with open("exp_archives/classif/" + filename, "wb") as f:
         pickle.dump({"datetime": now, "results": data}, f)
 
@@ -357,8 +398,10 @@ plt.legend(
 
 plt.show()
 
+
 if save_fig:
     now = datetime.now().strftime("%Y-%m-%d-%H:%M:%S")
+    ensure_directory("exp_archives/classif/")
     #specs = 'n%d_%s%.2f_block_size=%.2f_w_dist=%s' % (n_samples, noise_dist, noise_sigma[noise_dist], MOMreg_block_size, w_star_dist)
     fig_file_name = "exp_archives/classif/" + dataset + now + ".pdf"
     # g.fig.savefig(fname=fig_file_name)#, bbox_inches='tight')

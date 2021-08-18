@@ -22,7 +22,7 @@ logging.basicConfig(
     handlers=handlers,
 )
 
-save_results = False
+save_results = True
 save_fig = True
 
 logging.info(128 * "=")
@@ -42,7 +42,7 @@ outliers = True
 
 mom_thresholding = True
 mom_thresholding = False
-MOMreg_block_size = 0.04
+MOMreg_block_size = 0.02
 adamom_K_init = int(1 / MOMreg_block_size)
 
 catoni_thresholding = True
@@ -50,14 +50,14 @@ catoni_thresholding = False
 
 prasad_delta = 0.01
 
-random_seed = 43
+random_seed = 42
 
 noise_sigma = {
     "gaussian": 20,
     "lognormal": 1.75,
     "pareto": 30,
     "student": 20,
-    "weibull": 10,
+    "weibull": 20,
     "frechet": 10,
     "loglogistic": 10,
 }
@@ -67,7 +67,7 @@ Sigma_X = np.diag(np.arange(1, n_features + 1))
 mu_X = np.zeros(n_features) if X_centered else np.ones(n_features)
 
 w_star_dist = "uniform"
-noise_dist = "weibull"
+noise_dist = "loglogistic"
 
 step_size = 0.01
 T = 150
@@ -149,7 +149,7 @@ def generate_pareto_noise_sample(n_samples, sigma=10, pareto=2.05):
     return noise, expect_noise, noise_2nd_moment
 
 
-def generate_student_noise_sample(n_samples, sigma=10, df=3):
+def generate_student_noise_sample(n_samples, sigma=10, df=2.2):
     noise = sigma * rng.standard_t(df, n_samples)
     expect_noise = 0
     noise_2nd_moment = expect_noise ** 2 + (sigma ** 2) * df / (df - 2)
@@ -157,7 +157,7 @@ def generate_student_noise_sample(n_samples, sigma=10, df=3):
     return noise, expect_noise, noise_2nd_moment
 
 
-def generate_weibull_noise_sample(n_samples, sigma=10, a=0.75):
+def generate_weibull_noise_sample(n_samples, sigma=10, a=0.65):
     from scipy.special import gamma
 
     noise = sigma * rng.weibull(a, n_samples)
@@ -167,7 +167,7 @@ def generate_weibull_noise_sample(n_samples, sigma=10, a=0.75):
     return noise, expect_noise, noise_2nd_moment
 
 
-def generate_frechet_noise_sample(n_samples, sigma=10, alpha=2.5):
+def generate_frechet_noise_sample(n_samples, sigma=10, alpha=2.2):
     from scipy.special import gamma
 
     noise = sigma * (1 / rng.weibull(alpha, n_samples))
@@ -177,7 +177,7 @@ def generate_frechet_noise_sample(n_samples, sigma=10, alpha=2.5):
     return noise, expect_noise, noise_2nd_moment
 
 
-def generate_loglogistic_noise_sample(n_samples, sigma=10, c=2.5):
+def generate_loglogistic_noise_sample(n_samples, sigma=10, c=2.2):
     from scipy.stats import fisk
 
     noise = sigma * fisk.rvs(c, size=n_samples)
@@ -196,7 +196,7 @@ def Holland_gradient(w):
     return catoni_avg_grad
 
 
-def Lecue_gradient(w, n_blocks=51):  # n_blocks must be uneven
+def Lecue_gradient(w, n_blocks=int(1/MOMreg_block_size)):  # n_blocks must be uneven
     def argmedian(x):
         return np.argpartition(x, len(x) // 2)[len(x) // 2]
 
@@ -394,13 +394,13 @@ for rep in range(n_repeats):
 
     # outliers
     if outliers:
-        X = np.concatenate((X, np.ones((n_outliers, n_features))), axis=0)
+        X = np.concatenate((X, np.max(Sigma_X)*np.ones((n_outliers, n_features))), axis=0)
         # y = np.concatenate((y, 10*np.ones(n_outliers)*np.max(np.abs(y))))
         y = np.concatenate(
             (
                 y,
-                10
-                * (2 * np.random.randint(2, size=n_outliers) - 1)
+                2
+                * np.ones(n_outliers)#(2 * np.random.randint(2, size=n_outliers) - 1)
                 * np.max(np.abs(y)),
             )
         )
@@ -540,16 +540,23 @@ data = pd.DataFrame(
 if save_results:
     now = datetime.now().strftime("%Y-%m-%d-%H:%M:%S")
 
+    import subprocess
+    # Get the commit number as a string
+    commit = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"])
+    commit = commit.decode("utf-8").strip()
+
     filename = "linreg_results_" + now + ".pickle"
     with open("exp_archives/linreg/" + filename, "wb") as f:
-        pickle.dump({"datetime": now, "results": data}, f)
+        pickle.dump({"datetime": now, "commit": commit, "results": data}, f)
 
     logging.info("Saved results in file %s" % filename)
 
 logging.info("Plotting ...")
 
+line_width = 1.0
+
 g = sns.FacetGrid(data, col="metric", height=4, legend_out=True)
-g.map(sns.lineplot, "t", "value", "algo", lw=1.2, ci=None,).set(
+g.map(sns.lineplot, "t", "value", "algo", lw=line_width, ci=None,).set(
     yscale="log"
 ).set(xlabel="", ylabel="")
 
@@ -559,6 +566,10 @@ axes = g.axes.flatten()
 axes[0].set_title("Excess empirical risk")
 axes[1].set_title("Excess risk")
 
+color_palette=[]
+for line in axes[0].get_lines():
+    color_palette.append(line.get_c())
+color_palette = color_palette[:7]
 
 code_names = {
     "empirical_gradient": "erm",
@@ -571,12 +582,13 @@ code_names = {
     "tmean_cgd":"tmean_cgd"
 }
 
-plt.legend(
+#plt.legend(
+axes[0].legend(
     [code_names[name] for name in data["algo"].unique()],
     # bbox_to_anchor=(0.3, 0.7, 1.0, 0.0),
-    loc="upper right",
+    loc="lower left",
     ncol=2,
-    borderaxespad=0.0,
+    borderaxespad=0.2,
     columnspacing=1.0,
     fontsize=10,
 )
@@ -594,48 +606,52 @@ plt.legend(
 #     )
 # )
 
-from mpl_toolkits.axes_grid1.inset_locator import inset_axes
-
-axins = inset_axes(axes[-1], "40%", "30%", loc="lower left", borderpad=1)
-
-sns.lineplot(
-    x="t",
-    y="value",
-    hue="algo",
-    lw=1.2,
-    ci=None,
-    data=data.query(
-        "t >= %d and metric=='excess_risk' and algo!='true_gradient'" % ((T * 4) // 5)
-    ),
-    ax=axins,
-    legend=False,
-).set(
-    yscale="log"
-)  # , xticklabels=[], yticklabels=[], xlabel=None, ylabel=None)#
-axes[-1].indicate_inset_zoom(axins, edgecolor="black")
-axins.xaxis.set_visible(False)
-axins.yaxis.set_visible(False)
-
-axins0 = inset_axes(axes[0], "40%", "30%", loc="lower left", borderpad=1)
-
-sns.lineplot(
-    x="t",
-    y="value",
-    hue="algo",
-    lw=1.2,
-    ci=None,
-    data=data.query(
-        "t >= %d and metric=='excess_empirical_risk'"
-        % ((T * 4) // 5)
-    ),
-    ax=axins0,
-    legend=False,
-).set(
-    yscale="log"
-)  # , xticklabels=[], yticklabels=[], xlabel=None, ylabel=None)#
-axes[0].indicate_inset_zoom(axins0, edgecolor="black")
-axins0.xaxis.set_visible(False)
-axins0.yaxis.set_visible(False)
+# from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+#
+# axins = inset_axes(axes[-1], "40%", "30%", loc="lower left", borderpad=1)
+#
+# sns.lineplot(
+#     x="t",
+#     y="value",
+#     hue="algo",
+#     lw=line_width,
+#     ci=None,
+#     data=data.query(
+#         "t >= %d and metric=='excess_risk' and algo!='true_gradient'" % ((T * 4) // 5)
+#     ),
+#     ax=axins,
+#     legend=False,
+#     palette=color_palette[:-1],
+# ).set(
+#     yscale="log"
+# )  # , xticklabels=[], yticklabels=[], xlabel=None, ylabel=None)#
+#
+#
+# axes[-1].indicate_inset_zoom(axins, edgecolor="black")
+# axins.xaxis.set_visible(False)
+# axins.yaxis.set_visible(False)
+#
+# axins0 = inset_axes(axes[0], "40%", "30%", loc="lower left", borderpad=1)
+#
+# sns.lineplot(
+#     x="t",
+#     y="value",
+#     hue="algo",
+#     lw=line_width,
+#     ci=None,
+#     data=data.query(
+#         "t >= %d and metric=='excess_empirical_risk' and algo!='empirical_gradient'"
+#         % ((T * 4) // 5)
+#     ),
+#     ax=axins0,
+#     legend=False,
+#     palette=color_palette[1:],
+# ).set(
+#     yscale="log"
+# )  # , xticklabels=[], yticklabels=[], xlabel=None, ylabel=None)#
+# axes[0].indicate_inset_zoom(axins0, edgecolor="black")
+# axins0.xaxis.set_visible(False)
+# axins0.yaxis.set_visible(False)
 
 # for i, dataset in enumerate(df["dataset"].unique()):
 #     axes[i].set_xticklabels([0, 1, 2, 5, 10, 20, 50], fontsize=14)
