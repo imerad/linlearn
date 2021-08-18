@@ -67,7 +67,7 @@ Sigma_X = np.diag(np.arange(1, n_features + 1))
 mu_X = np.zeros(n_features) if X_centered else np.ones(n_features)
 
 w_star_dist = "uniform"
-noise_dist = "lognormal"
+noise_dist = "weibull"
 
 step_size = 0.01
 T = 150
