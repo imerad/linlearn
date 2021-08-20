@@ -11,6 +11,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import pandas as pd
 
+
 file_handler = logging.FileHandler(filename="exp_archives/linreg_exp.log")
 stdout_handler = logging.StreamHandler(sys.stdout)
 handlers = [file_handler, stdout_handler]
@@ -22,7 +23,7 @@ logging.basicConfig(
     handlers=handlers,
 )
 
-save_results = True
+save_results = False
 save_fig = True
 
 logging.info(128 * "=")
@@ -32,13 +33,13 @@ logging.info(128 * "=")
 if not save_results:
     logging.info("WARNING : results will NOT be saved at the end of this session")
 
-n_repeats = 30
+n_repeats = 10
 
-n_samples = 1000
+n_samples = 500
 n_features = 5
 
 n_outliers = 10
-outliers = True
+outliers = False
 
 mom_thresholding = True
 mom_thresholding = False
@@ -67,10 +68,10 @@ Sigma_X = np.diag(np.arange(1, n_features + 1))
 mu_X = np.zeros(n_features) if X_centered else np.ones(n_features)
 
 w_star_dist = "uniform"
-noise_dist = "loglogistic"
+noise_dist = "lognormal"
 
-step_size = 0.01
-T = 150
+step_size = 0.05
+T = 250
 
 logging.info(
     "Lauching experiment with parameters : \n n_repeats = %d , n_samples = %d , n_features = %d , outliers = %r"
@@ -374,6 +375,14 @@ else:
 
 metrics = ["excess_empirical_risk", "excess_risk"]  # , "gradient_error"]
 
+class Record(object):
+    def __init__(self, shape, capacity):
+        self.record = np.zeros(capacity) if shape == 1 else np.zeros(tuple([capacity] + list(shape)))
+        self.cursor = 0
+    def update(self, value):
+        self.record[self.cursor] = value
+        self.cursor += 1
+
 logging.info("tracked metrics are %r" % metrics)
 
 for rep in range(n_repeats):
@@ -386,6 +395,7 @@ for rep in range(n_repeats):
 
     logging.info("generating data ...")
     X = rng.multivariate_normal(mu_X, Sigma_X, size=n_samples)
+
     w_star = gen_w_star(n_features, dist=w_star_dist)
     noise, expect_noise, noise_2nd_moment = noise_fct(
         n_samples, noise_sigma[noise_dist]
@@ -400,10 +410,11 @@ for rep in range(n_repeats):
             (
                 y,
                 2
-                * np.ones(n_outliers)#(2 * np.random.randint(2, size=n_outliers) - 1)
+                * (2 * np.random.randint(2, size=n_outliers) - 1)#np.ones(n_outliers)
                 * np.max(np.abs(y)),
             )
         )
+
 
     logging.info("generating risks and gradients ...")
 
@@ -425,6 +436,8 @@ for rep in range(n_repeats):
 
     XXT = X.T @ X
     Xy = X.T @ y
+
+    Lip = np.max(np.diag(XXT))/X.shape[0]
 
     def empirical_gradient(w):
         return (XXT @ w - Xy) / n_samples
@@ -450,7 +463,7 @@ for rep in range(n_repeats):
             [excess_empirical_risk, excess_risk],
             np.zeros(n_features),
             gradient,
-            step_size,
+            step_size/Lip,
             T,
         )
 
@@ -463,10 +476,10 @@ for rep in range(n_repeats):
         step_size=step_size,
         block_size=MOMreg_block_size,
     )
-    MOM_regressor.fit(X, y, tracked_funs=[excess_empirical_risk, excess_risk])
-    # MOM_regressor.fit(X, y, tracked_funs=[lambda x : excess_empirical_risk(x[1]), lambda x : excess_risk(x[1])])
+    mom_param_record = Record((n_features, 1), T)
+    MOM_regressor.fit(X, y, trackers=[lambda w : mom_param_record.update(w)])
+    outputs["mom_cgd"] = [np.array([fun(x) for x in mom_param_record.record]) for fun in [excess_empirical_risk, excess_risk]]
 
-    outputs["mom_cgd"] = MOM_regressor.optimization_result_.tracked_funs
     # logging.info("running MOM cgd")
     # outputs["mom_cgd"] = mom_cgd([excess_empirical_risk, excess_risk], np.zeros(n_features), step_size, T, steps=MOM_regressor._steps)
 
@@ -479,32 +492,37 @@ for rep in range(n_repeats):
         thresholding=catoni_thresholding,
         step_size=step_size,
     )
-    catoni_regressor.fit(X, y, tracked_funs=[excess_empirical_risk, excess_risk])
-    outputs["catoni_cgd"] = catoni_regressor.optimization_result_.tracked_funs
+    catoni_param_record = Record((n_features, 1), T)
+    catoni_regressor.fit(X, y, trackers=[lambda w : catoni_param_record.update(w)])
+    #catoni_regressor.fit(X, y, tracked_funs=[excess_empirical_risk, excess_risk])
+    outputs["catoni_cgd"] = [np.array([fun(x) for x in catoni_param_record.record]) for fun in [excess_empirical_risk, excess_risk]]
+
     # outputs["catoni_cgd"] = catoni_cgd_descent([excess_empirical_risk, excess_risk], np.zeros(n_features), step_size, T, steps=MOM_regressor._steps)
     # logging.info("running adaptive MOM cgd")
     # outputs["adaptive_mom_cgd"] = adaptive_mom_cgd([excess_empirical_risk, excess_risk], np.zeros(n_features), step_size, T, steps=MOM_regressor._steps)
     for gradient in [
         Prasad_HeavyTail_gradient,
         Lecue_gradient,
-    ]:  # , Prasad_outliers_gradient
+        Prasad_outliers_gradient]:  # ,
         outputs[gradient.__name__] = gradient_descent(
             [excess_empirical_risk, excess_risk],
             np.zeros(n_features),
             gradient,
-            step_size,
+            step_size/Lip,
             T,
         )
 
-    # tmean_regressor = MOMRegressor(
-    #     tol=1e-17,
-    #     max_iter=T,
-    #     fit_intercept=False,
-    #     strategy="tmean",
-    #     step_size=step_size,
-    # )
-    # tmean_regressor.fit(X, y, tracked_funs=[excess_empirical_risk, excess_risk])
-    # outputs["tmean_cgd"] = tmean_regressor.optimization_result_.tracked_funs
+    tmean_regressor = MOMRegressor(
+        tol=1e-17,
+        max_iter=T,
+        fit_intercept=False,
+        strategy="tmean",
+        step_size=step_size,
+    )
+    tmean_param_record = Record((n_features, 1), T)
+    tmean_regressor.fit(X, y, trackers=[lambda w : tmean_param_record.update(w)])
+    #tmean_regressor.fit(X, y, tracked_funs=[excess_empirical_risk, excess_risk])
+    outputs["tmean_cgd"] = [np.array([fun(x) for x in tmean_param_record.record]) for fun in [excess_empirical_risk, excess_risk]]
 
     # run the true gradient at the end so colors stay the same when it is excluded
     for gradient in [true_gradient]:
@@ -512,7 +530,7 @@ for rep in range(n_repeats):
             [excess_empirical_risk, excess_risk],
             np.zeros(n_features),
             gradient,
-            step_size,
+            step_size/Lip,
             T,
         )
 
@@ -579,7 +597,8 @@ code_names = {
     "Prasad_HeavyTail_gradient": "gmom_grad",
     "Lecue_gradient": "implicit",
     "catoni_cgd":"catoni_cgd",
-    "tmean_cgd":"tmean_cgd"
+    "tmean_cgd":"tmean_cgd",
+    "Prasad_outliers_gradient":"Prasad_outliers_gradient"
 }
 
 #plt.legend(

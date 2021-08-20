@@ -78,6 +78,7 @@ def SSI(samples, subset_cardinality):
 
 
 def alg2(X, eps, delta=0.001):
+    # from Prasad et al. 2018
     X_tilde = alg4(X, eps, delta)
 
     n, p = X_tilde.shape
@@ -101,6 +102,7 @@ def alg2(X, eps, delta=0.001):
 
 
 def alg4(X, eps, delta=0.001):
+    # from Prasad et al. 2018
     n, p = X.shape
     if p == 1:
         X_tilde = SSI(X.flatten(), max(2, ceil(n * (1 - eps - C5 * np.sqrt(np.log(n / delta) / n)) * (1 - eps))))
@@ -113,6 +115,7 @@ def alg4(X, eps, delta=0.001):
     return X_tilde
 
 def gmom(xs, tol=1e-7):
+    # from Vardi and Zhang 2000
     y = np.average(xs, axis=0)
     eps = 1e-10
     delta = 1

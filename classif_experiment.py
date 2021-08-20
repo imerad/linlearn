@@ -13,7 +13,8 @@ from scipy.special import logsumexp, softmax
 import os
 import itertools
 from tqdm import tqdm
-import joblib, contextlib
+import joblib
+
 def ensure_directory(directory):
     if not os.path.exists(directory):
         os.makedirs(directory)
@@ -319,7 +320,7 @@ def run_repetition(rep):
         print(str(rep)+" : "+x+" done")
     outputs["Prasad_heavytails"] = Prasad_heavyTails_gd(X_train, y_train)
     announce("gmom_gd")
-    outputs["lecue_cgd"] = Lecue_gd(X_train, y_train)
+    outputs["lecue_gd"] = Lecue_gd(X_train, y_train)
     announce("lecue_gd")
     outputs["SVRG"] = SVRG(X_train, y_train, gradient, m_SVRG)
     announce("SVRG")

@@ -137,8 +137,9 @@ def l1_apply_single(x, t):
 @njit
 def l1_value(x, strength):
     l1 = 0.0
-    for j in range(x.shape[0]):
-        l1 += fabs(x[j])
+    for i in range(x.shape[0]):
+        for j in range(x.shape[1]):
+            l1 += fabs(x[i, j])
 
     return strength * l1
 

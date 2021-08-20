@@ -17,7 +17,7 @@ from .robust_means import estimate_sigma
 # TODO: random_state same thing as in scikit
 
 OptimizationResult = namedtuple(
-    "OptimizationResult", ["n_iter", "tol", "success", "w", "message", "tracked_funs"]
+    "OptimizationResult", ["n_iter", "tol", "success", "w", "message"]
 )
 
 # Attributes
@@ -117,7 +117,7 @@ OptimizationResult = namedtuple(
 
 # @njit
 def coordinate_gradient_descent(
-    loss, penalty, strategy, w, X, y, fit_intercept, steps, max_iter, tol, history, thresholding=False, tracked_funs=None
+    loss, penalty, strategy, w, X, y, fit_intercept, steps, max_iter, tol, history, thresholding=False
 ):
     n_samples, n_features = X.shape
 
@@ -144,10 +144,6 @@ def coordinate_gradient_descent(
     penalty_value = penalty.value
     penalty_apply_single = penalty.apply_single
 
-    if tracked_funs:
-        tracks = [np.ones(max_iter) for i in range(len(tracked_funs))]
-    else:
-        tracks = None
 
     # Objective function
     # TODO: can be njitted right ?
@@ -163,7 +159,7 @@ def coordinate_gradient_descent(
 
     @njit
     def coordinate_gradient_descent_cycle(
-        w, inner_products, coordinates, thresholds=None, cycle=None,
+        w, inner_products, coordinates, thresholds=None
     ):
         """This function implements one cycle of coordinate gradient descent
         """
@@ -227,10 +223,10 @@ def coordinate_gradient_descent(
         return max_abs_delta, max_abs_weight
 
     # Value of the objective at initialization
-    obj = objective(w)
+    # obj = objective(w)
 
     # TODO: First value for tolerance is 1.0 or NaN
-    history.update(epoch=0, obj=obj, tol=1.0, update_bar=False)
+    # history.update(epoch=0, obj=obj, tol=1.0, update_bar=False)
 
 
     def compute_thresholds():
@@ -247,17 +243,14 @@ def coordinate_gradient_descent(
     thresholds = compute_thresholds() if thresholding and strategy.name!="erm" else None
 
     for cycle in range(1, max_iter + 1):
-        if tracked_funs:
-            for i, f in enumerate(tracked_funs):
-                tracks[i][cycle-1] = f(w)
 
         # Sample a permutation of the coordinates
         coordinates = permutation(w_size)
         # Launch the coordinates cycle
-        max_abs_delta, max_abs_weight = coordinate_gradient_descent_cycle(w, inner_products, coordinates, thresholds, cycle)
+        max_abs_delta, max_abs_weight = coordinate_gradient_descent_cycle(w, inner_products, coordinates, thresholds)
 
         # Compute the new value of objective
-        obj = objective(w)
+        # obj = objective(w)
 
         # Did we reached the required tolerance within the max_iter number of cycles ?
         # if (
@@ -286,7 +279,8 @@ def coordinate_gradient_descent(
         # )
 
         # TODO: tester tous les cas "max_abs_weight == 0.0" etc..
-        history.update(epoch=cycle, obj=obj, tol=current_tol, update_bar=True)
+        #history.update(epoch=cycle, obj=obj, tol=current_tol, update_bar=True)
+        history.update(w, update_bar=False)
 
         # Just go through the full iteration
 
@@ -294,14 +288,14 @@ def coordinate_gradient_descent(
         # if current_tol < tol:
         #     history.close_bar()
         #     return OptimizationResult(
-        #         w=w, n_iter=cycle, success=True, tol=tol, message=None, tracked_funs=tracks
+        #         w=w, n_iter=cycle, success=True, tol=tol, message=None
         #     )
         if thresholding:
             thresholds = compute_thresholds()
 
     history.close_bar()
     return OptimizationResult(
-        w=w, n_iter=max_iter + 1, success=False, tol=tol, message=None, tracked_funs=tracks
+        w=w, n_iter=max_iter + 1, success=False, tol=tol, message=None
     )
 
     # TODO: stopping criterion max(weigth difference) / max(weight) + duality gap
@@ -371,7 +365,7 @@ def coordinate_gradient_descent_factory():
 solvers_factory = {"cgd": coordinate_gradient_descent_factory}
 
 def batched_coordinate_gradient_descent(
-    loss, penalty, strategy, w, X, y, fit_intercept, steps, batch_size, max_iter, tol, tracked_funs=None
+    loss, penalty, strategy, w, X, y, fit_intercept, steps, batch_size, max_iter, tol
 ):
     n_samples, n_features = X.shape
 
@@ -389,8 +383,6 @@ def batched_coordinate_gradient_descent(
     inner_products = np.empty((batch_size, n_w_cols), dtype=X.dtype)
 
     penalty_apply_single = penalty.apply_single
-
-    tracks = [np.ones(max_iter) for i in range(len(tracked_funs))] if tracked_funs else None
 
     grad_coordinate = strategy.grad_coordinate
 
@@ -467,9 +459,6 @@ def batched_coordinate_gradient_descent(
 
 
     for cycle in range(1, max_iter + 1):
-        if tracked_funs:
-            for i, f in enumerate(tracked_funs):
-                tracks[i][cycle-1] = f(w)
 
         # Sample a permutation of the coordinates
         coordinates = permutation(w_size)
@@ -482,7 +471,7 @@ def batched_coordinate_gradient_descent(
             print("max_abs_weight == 0.0")
 
     return OptimizationResult(
-        w=w, n_iter=max_iter + 1, success=False, tol=tol, message=None, tracked_funs=tracks
+        w=w, n_iter=max_iter + 1, success=False, tol=tol, message=None
     )
 
 
@@ -682,13 +671,14 @@ class History(object):
 
     """
 
-    def __init__(self, title, max_iter, verbose):
+    def __init__(self, title, max_iter, verbose, trackers=None):
         self.max_iter = max_iter
         self.verbose = verbose
         self.keys = None
         self.values = defaultdict(list)
         self.title = title
         self.n_updates = 0
+        self.trackers = trackers
         # TODO: List all possible keys
         print_style = defaultdict(lambda: "%.2e")
         print_style.update(
@@ -715,7 +705,7 @@ class History(object):
         else:
             self.bar = None
 
-    def update(self, update_bar=True, **kwargs):
+    def update(self, current_iterate, update_bar=True, **kwargs):
         # Total number of calls to update must be smaller than max_iter + 1
         if self.max_iter >= self.n_updates:
             self.n_updates += 1
@@ -729,7 +719,8 @@ class History(object):
         # exact same keys
         if self.keys is None:
             # OK since order is preserved in kwargs since Python 3.6
-            self.keys = list(kwargs.keys())
+            #self.keys = list(kwargs.keys())
+            pass
         else:
             k1, k2 = set(self.keys), set(kwargs.keys())
             if k1 != k2:
@@ -742,8 +733,8 @@ class History(object):
         print_style = self.print_style
 
         # Update the history
-        for key, val in kwargs.items():
-            values[key].append(val)
+        # for key, val in kwargs.items():
+        #     values[key].append(val)
 
         # If required, update the tqdm bar
         if self.verbose and update_bar:
@@ -755,6 +746,9 @@ class History(object):
             )
             self.bar.set_postfix_str(postfix)
             self.bar.update(1)
+        if self.trackers:
+            for track in self.trackers:
+                track(current_iterate)
 
     def close_bar(self):
         if self.bar is not None:

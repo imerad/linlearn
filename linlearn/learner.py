@@ -242,7 +242,7 @@ class MOMBase(ClassifierMixin, BaseEstimator):
 
     # TODO: properties for class_weight=None, random_state=None, verbose=0, warm_start=False, n_jobs=None
 
-    def _get_solver(self, X, y):
+    def _get_solver(self, X, y, trackers=None):
         n_samples, n_features = X.shape
 
         # Get the loss object
@@ -268,10 +268,10 @@ class MOMBase(ClassifierMixin, BaseEstimator):
             # Get the gradient descent steps for each coordinate
             self._steps = steps_coordinate_descent(loss.lip, X, n_samples_in_block, self.fit_intercept)
             steps = self.step_size * self._steps
-            self.history_ = History("CGD", self.max_iter, self.verbose)
+            self.history_ = History("CGD", self.max_iter, self.verbose, trackers=trackers)
 
             if self.batch_size == 0 or self.batch_size >= n_samples:
-                def solve(w, tracked_funs=None):
+                def solve(w):
                     return coordinate_gradient_descent(
                         loss,
                         penalty,
@@ -285,10 +285,9 @@ class MOMBase(ClassifierMixin, BaseEstimator):
                         self.tol,
                         self.history_,
                         thresholding=self.thresholding,
-                        tracked_funs=tracked_funs
                     )
             else:
-                def solve(w, tracked_funs=None):
+                def solve(w):
                     return batched_coordinate_gradient_descent(
                         loss,
                         penalty,
@@ -301,7 +300,6 @@ class MOMBase(ClassifierMixin, BaseEstimator):
                         self.batch_size,
                         self.max_iter,
                         self.tol,
-                        tracked_funs=tracked_funs
                     )
 
             return solve
@@ -309,7 +307,7 @@ class MOMBase(ClassifierMixin, BaseEstimator):
         else:
             raise NotImplementedError("%s is not implemented yet" % self.solver)
 
-    def fit(self, X, y, sample_weight=None, tracked_funs=None):
+    def fit(self, X, y, sample_weight=None, trackers=None):
         """
         Fit the model according to the given training data.
 
@@ -428,9 +426,9 @@ class MOMBase(ClassifierMixin, BaseEstimator):
         #     )
 
         #######
-        solver = self._get_solver(X, y_encoded)
+        solver = self._get_solver(X, y_encoded, trackers=trackers)
         w = self._get_initial_iterate(X, y_encoded)
-        optimization_result = solver(w, tracked_funs=tracked_funs)
+        optimization_result = solver(w)
 
         self.optimization_result_ = optimization_result
         self.n_iter_ = np.asarray([optimization_result.n_iter], dtype=np.int32)
