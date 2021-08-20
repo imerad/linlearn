@@ -43,11 +43,11 @@ logging.info(64*"=")
 
 step_size = 0.01
 
-max_iter = 5
+max_iter = 50
 fit_intercept = True
 
 n_samples = None
-n_repeats = 5
+n_repeats = 3
 
 logging.info("Parameters are : n_repeats = %d , n_samples = %d , max_ter = %d , fit_intercept=%r" % (n_repeats, n_samples or 0, max_iter, fit_intercept))
 
@@ -139,12 +139,40 @@ def test_loss(w, algo_name=""):
     return objective(X_test, y_test, w, fit_intercept=fit_intercept, lnlearn=algo_name in linlearn_algorithms)
 
 
+def erm_cgd(X_train, y_train, l1_penalty=1):
+    mom_logreg = BinaryClassifier(tol=1e-17, max_iter=max_iter, strategy="erm", fit_intercept=fit_intercept, penalty="l1", C=l1_penalty,
+                              step_size=step_size, loss="logistic")
+    param_record = Record((X_train.shape[1]+int(fit_intercept),), max_iter)
+    time_record = Record(1, max_iter)
+    mom_logreg.fit(X_train, y_train, trackers=[lambda w: param_record.update(np.vstack(w).flatten()), lambda _:time_record.update(time.time())])
+
+    # n_iter = len(mom_logreg.optimization_result_.tracked_funs[0])
+    # n_batches = 1 if batch_size == 0 else X_train.shape[0] // batch_size + int(X_train.shape[0] % batch_size > 0)
+    # gradient_counts = [(i // n_batches) * X_train.shape[0] + (i % n_batches) * batch_size for i in
+    #                    range(n_iter)]
+
+    return param_record, time_record
+
 def mom_cgd(X_train, y_train, l1_penalty=1):
     mom_logreg = BinaryClassifier(tol=1e-17, max_iter=max_iter, strategy="mom", fit_intercept=fit_intercept, penalty="l1", C=l1_penalty,
                               step_size=step_size, loss="logistic")
     param_record = Record((X_train.shape[1]+int(fit_intercept),), max_iter)
     time_record = Record(1, max_iter)
     mom_logreg.fit(X_train, y_train, trackers=[lambda w: param_record.update(np.vstack(w).flatten()), lambda _:time_record.update(time.time())])
+
+    # n_iter = len(mom_logreg.optimization_result_.tracked_funs[0])
+    # n_batches = 1 if batch_size == 0 else X_train.shape[0] // batch_size + int(X_train.shape[0] % batch_size > 0)
+    # gradient_counts = [(i // n_batches) * X_train.shape[0] + (i % n_batches) * batch_size for i in
+    #                    range(n_iter)]
+
+    return param_record, time_record
+
+def catoni_cgd(X_train, y_train, l1_penalty=1):
+    catoni_logreg = BinaryClassifier(tol=1e-17, max_iter=max_iter, strategy="catoni", fit_intercept=fit_intercept, penalty="l1", C=l1_penalty,
+                              step_size=step_size, loss="logistic")
+    param_record = Record((X_train.shape[1]+int(fit_intercept),), max_iter)
+    time_record = Record(1, max_iter)
+    catoni_logreg.fit(X_train, y_train, trackers=[lambda w: param_record.update(np.vstack(w).flatten()), lambda _:time_record.update(time.time())])
 
     # n_iter = len(mom_logreg.optimization_result_.tracked_funs[0])
     # n_batches = 1 if batch_size == 0 else X_train.shape[0] // batch_size + int(X_train.shape[0] % batch_size > 0)
@@ -160,7 +188,7 @@ def SAGA(X, y, w0=None, fit_intercept=fit_intercept, l1_penalty=0):
     else:
         wt = w0
 
-    param_record = Record((X_train.shape[1]+int(fit_intercept),), max_iter)
+    param_record = Record((X.shape[1]+int(fit_intercept),), max_iter)
     time_record = Record(1, max_iter)
 
     table = X @ wt[1:] + wt[0] if fit_intercept else X @ wt
@@ -191,6 +219,114 @@ def SAGA(X, y, w0=None, fit_intercept=fit_intercept, l1_penalty=0):
     return param_record, time_record
 
 
+def SVRG(X, y, w0=None, T=max_iter, fit_intercept=fit_intercept):
+    if w0 is None:
+        w0 = np.zeros((X.shape[1] + int(fit_intercept)))
+    w_tilde = w0
+    wt = w0
+    step = step_size/(X.shape[0])
+    m = X.shape[0]
+
+    param_record = Record((X.shape[1]+int(fit_intercept),), max_iter)
+    time_record = Record(1, max_iter)
+
+    for i in tqdm(range(T), desc="SVRG"):
+        mu = gradient(X, y, w_tilde, fit_intercept=fit_intercept)
+
+        for j in range(m):
+            ind = np.random.randint(X.shape[0])
+            X_ind, y_ind = X[ind:ind+1,:], y[ind:ind+1]
+            wt -= step*(gradient(X_ind, y_ind, wt, fit_intercept=fit_intercept) - gradient(X_ind, y_ind, w_tilde, fit_intercept=fit_intercept) + mu)
+        w_tilde = wt
+        param_record.update(wt)
+        time_record.update(time.time())
+
+    return param_record, time_record
+
+
+
+def Prasad_heavyTails_gd(X, y, w0=None, T=max_iter, fit_intercept=fit_intercept, delta=0.01, l1_penalty=0):
+    if w0 is None:
+        w0 = np.zeros((X.shape[1] + int(fit_intercept)))
+    n_blocks = 1 + int(3.5 * np.log(1 / delta))
+    block_size = X.shape[0] // n_blocks
+    wt = w0
+
+    param_record = Record((X.shape[1]+int(fit_intercept),), max_iter)
+    time_record = Record(1, max_iter)
+
+
+    for i in tqdm(range(T), desc = "prasad_heavy_tail"):
+        gradients = sample_gradients(X, y, wt, fit_intercept=fit_intercept)
+        permutation = np.random.permutation(X.shape[0])
+        block_means = []
+        for j in range(n_blocks):
+            block_means.append(np.mean(gradients[permutation[j * block_size:(j + 1) * block_size], :], axis=0).reshape(-1))
+        grad = gmom(np.array(block_means)).reshape(wt.shape)
+        wt -= step_size * grad
+        for k in range(int(fit_intercept), len(wt)):
+            wt[k] = l1_apply_single(wt[k], l1_penalty * step_size)
+
+        param_record.update(wt)
+        time_record.update(time.time())
+
+    return param_record, time_record
+
+def Lecue_gd(X, y, w0=None, T=max_iter, fit_intercept=fit_intercept, n_blocks=21):
+    """n_blocks must be uneven"""
+    if w0 is None:
+        w0 = np.zeros((X.shape[1] + int(fit_intercept)))
+
+    def argmedian(x):
+        return np.argpartition(x, len(x) // 2)[len(x) // 2]
+    block_size = X.shape[0] // n_blocks
+    wt = w0
+    param_record = Record((X.shape[1]+int(fit_intercept),), max_iter)
+    time_record = Record(1, max_iter)
+
+
+    for i in tqdm(range(T), desc = "Lecue"):
+
+        objectives = sample_objectives(X, y, wt, fit_intercept=fit_intercept)
+
+        perm = np.random.permutation(X.shape[0])
+        means = [
+            np.mean(objectives[perm[j * block_size: (j + 1) * block_size]])
+            for j in range(n_blocks)
+        ]
+        argmed = argmedian(means)
+        indices = perm[argmed * block_size: (argmed + 1) * block_size]
+        X_subset, y_subset = X[indices, :], y[indices]
+
+        grad = gradient(X_subset, y_subset, wt, fit_intercept=fit_intercept)
+        wt -= step_size * grad
+        param_record.update(wt)
+        time_record.update(time.time())
+
+    return param_record, time_record
+
+def Holland_gd(X, y, w0=None, T=max_iter, fit_intercept=fit_intercept):
+    if w0 is None:
+        w0 = np.zeros((X.shape[1] + int(fit_intercept)))
+    wt = w0
+    param_record = Record((X.shape[1]+int(fit_intercept),), max_iter)
+    time_record = Record(1, max_iter)
+
+    for i in tqdm(range(T), desc="Holland"):
+        gradients = sample_gradients(X, y, wt, fit_intercept=fit_intercept)
+        catoni_avg_grad = np.zeros_like(wt)
+        for k in range(len(wt)):
+            catoni_avg_grad[k] = Holland_catoni_estimator(gradients[:, k])
+
+        wt -= step_size * catoni_avg_grad
+
+        param_record.update(wt)
+        time_record.update(time.time())
+
+    return param_record, time_record
+
+
+
 metrics = [train_loss, test_loss]
 
 def run_repetition(rep):
@@ -199,10 +335,30 @@ def run_repetition(rep):
     outputs = {}
     def announce(x):
         logging.info(str(rep)+" : "+x+" done")
-    outputs["SAGA"] = SAGA(X_train, y_train)
-    announce("SAGA")
+
+    outputs["Holland"] = Holland_gd(X_train, y_train)
+    announce("Holland")
+
+    # outputs["SAGA"] = SAGA(X_train, y_train)
+    # announce("SAGA")
+    #
+    # outputs["SVRG"] = SVRG(X_train, y_train)
+    # announce("SVRG")
+    #
     outputs["mom_cgd"] = mom_cgd(X_train, y_train)
     announce("mom_cgd")
+
+    outputs["erm_cgd"] = erm_cgd(X_train, y_train)
+    announce("erm_cgd")
+
+    outputs["catoni_cgd"] = catoni_cgd(X_train, y_train)
+    announce("catoni_cgd")
+
+    outputs["Prasad_heavyTails_gd"] = Prasad_heavyTails_gd(X_train, y_train)
+    announce("Prasad_heavyTails_gd")
+
+    outputs["Lecue_gd"] = Lecue_gd(X_train, y_train)
+    announce("Lecue_gd")
 
     logging.info("computing objective history")
     for alg in outputs.keys():
