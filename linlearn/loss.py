@@ -72,11 +72,11 @@ def steps_coordinate_descent(loss_lip, X, block_size, fit_intercept):
         # First squared norm is n_samples
         steps[0] = 1 / lip_const
         for j in prange(1, n_features + 1):
-            steps[j] = median_of_means(X[:, j - 1] ** 2, block_size) / lip_const
+            steps[j] = 1 / (max(median_of_means(X[:, j - 1] ** 2, block_size), 1e-8) * lip_const)
     else:
         steps = np.zeros(n_features, dtype=X.dtype)
         for j in prange(n_features):
-            steps[j] = median_of_means(X[:, j] ** 2, block_size) / lip_const
+            steps[j] = 1 / (max(median_of_means(X[:, j] ** 2, block_size), 1e-8) * lip_const)
     # print(steps)
     # steps /= n_samples
     return steps
@@ -151,6 +151,7 @@ def softmax1(z, j):
     else:
         return np.exp(z[j] - zmax) / (expzmax + np.exp(z - zmax).sum())
 
+
 # TODO: faster logistic
 
 
@@ -188,9 +189,16 @@ def logisic_factory():
     )
 
 
+# @njit(fastmath=True, inline="always")
+# def multilogistic_value_single(y, z):
+#     z0 = np.concatenate((z, np.array([0])))
+#     exponentiated = np.exp(z0 - np.max(z0))
+#     normalized = exponentiated/exponentiated.sum()
+#     return - log(normalized[y])
+
 @njit(fastmath=True, inline="always")
 def multilogistic_value_single(y, z):
-    z0 = np.concatenate((z, np.array([0])))
+    z0 = np.append(z, 0)
     exponentiated = np.exp(z0 - np.max(z0))
     normalized = exponentiated/exponentiated.sum()
     return - log(normalized[y])

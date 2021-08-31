@@ -1,8 +1,7 @@
 import numpy as np
-from numpy.random import permutation
 from numba import njit, prange
 from collections import namedtuple
-from .robust_means import Holland_catoni_estimator
+from .robust_means import Holland_catoni_estimator, median_of_means
 from math import ceil
 
 # TODO: definir ici une strategy
@@ -89,37 +88,6 @@ def decision_function(X, coef, intercept, out):
 import numpy as np
 from numba import njit
 
-
-@njit
-def median_of_means(x, block_size):
-    n = x.shape[0]
-    n_blocks = int(n // block_size)
-    last_block_size = n % block_size
-    if last_block_size == 0:
-        block_means = np.empty(n_blocks, dtype=x.dtype)
-    else:
-        block_means = np.empty(n_blocks + 1, dtype=x.dtype)
-
-    # TODO:instanciates in the closure
-    # This shuffle or the indexes to get different blocks each time
-    permuted_indices = permutation(n)
-    sum_block = 0.0
-    n_block = 0
-    for i in range(n):
-        idx = permuted_indices[i]
-        # Update current sum in the block
-        sum_block += x[idx]
-        if (i != 0) and ((i + 1) % block_size == 0):
-            # It's the end of the block, save its mean
-            block_means[n_block] = sum_block / block_size
-            n_block += 1
-            sum_block = 0.0
-
-    if last_block_size != 0:
-        block_means[n_blocks] = sum_block / last_block_size
-
-    mom = np.median(block_means)
-    return mom#, blocks_means
 
 @njit
 def trimmed_mean(x, delta=0.01):

@@ -1,6 +1,7 @@
 import numpy as np
 from numba import njit, vectorize, float64
 from math import ceil
+from numpy.random import permutation
 
 #@njit
 @vectorize([float64(float64)])
@@ -114,6 +115,35 @@ def alg4(X, eps, delta=0.001):
     X_tilde = X[asort[:ceil(n * (1 - eps - C(p) * np.sqrt(np.log(n / (p * delta)) * p / n)) * (1 - eps))], :]
     return X_tilde
 
+@njit
+def gmom_njit(xs, tol=1e-7):
+    # from Vardi and Zhang 2000
+    y = np.zeros(xs.shape[1])
+    for i in range(xs.shape[0]):
+        y += xs[i]
+    y /= xs.shape[0]
+    eps = 1e-10
+    delta = 1
+    niter = 0
+    while delta > tol:
+        xsy = xs - y
+        dists = np.zeros(xsy.shape[0])
+        for i in range(xsy.shape[1]):
+            dists += xsy[:,i] ** 2 #np.linalg.norm(xsy, axis=1)
+        dists = np.sqrt(dists)
+        inv_dists = 1 / dists
+        mask = dists < eps
+        inv_dists[mask] = 0
+        nb_too_close = (mask).sum()
+        ry = np.sqrt(np.sum(np.dot(inv_dists, xsy)**2))#np.linalg.norm(np.dot(inv_dists, xsy))
+        cst = nb_too_close / ry
+        y_new = max(0, 1 - cst) * np.dot(inv_dists, xs)/np.sum(inv_dists) + min(1, cst) * y
+        delta = np.sqrt(np.sum((y - y_new)**2))#np.linalg.norm(y - y_new)
+        y = y_new
+        niter += 1
+    # print(niter)
+    return y
+
 def gmom(xs, tol=1e-7):
     # from Vardi and Zhang 2000
     y = np.average(xs, axis=0)
@@ -135,4 +165,36 @@ def gmom(xs, tol=1e-7):
         niter += 1
     # print(niter)
     return y
+
+@njit
+def median_of_means(x, block_size):
+    n = x.shape[0]
+    n_blocks = int(n // block_size)
+    last_block_size = n % block_size
+    if last_block_size == 0:
+        block_means = np.empty(n_blocks, dtype=x.dtype)
+    else:
+        block_means = np.empty(n_blocks + 1, dtype=x.dtype)
+
+    # TODO:instanciates in the closure
+    # This shuffle or the indexes to get different blocks each time
+    permuted_indices = permutation(n)
+    sum_block = 0.0
+    n_block = 0
+    for i in range(n):
+        idx = permuted_indices[i]
+        # Update current sum in the block
+        sum_block += x[idx]
+        if (i != 0) and ((i + 1) % block_size == 0):
+            # It's the end of the block, save its mean
+            block_means[n_block] = sum_block / block_size
+            n_block += 1
+            sum_block = 0.0
+
+    if last_block_size != 0:
+        block_means[n_blocks] = sum_block / last_block_size
+
+    mom = np.median(block_means)
+    return mom#, blocks_means
+
 

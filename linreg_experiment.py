@@ -437,7 +437,7 @@ for rep in range(n_repeats):
     XXT = X.T @ X
     Xy = X.T @ y
 
-    Lip = np.max(np.diag(XXT))/X.shape[0]
+    Lip = np.linalg.eigh(XXT/X.shape[0])[0][-1]
 
     def empirical_gradient(w):
         return (XXT @ w - Xy) / n_samples
