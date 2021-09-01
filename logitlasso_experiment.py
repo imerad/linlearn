@@ -61,7 +61,7 @@ if not save_results:
 
 logging.info("loading data ...")
 
-dataset = "Adult"#"weatherAUS"#"Heart"#"Bank"#"Stroke"#
+dataset = "Bank"#"Stroke"#"Adult"#"weatherAUS"#"Heart"#
 
 def load_heart(test_size=0.3):
     csv_heart = pd.read_csv("heart/heart.csv")
@@ -549,7 +549,7 @@ def Holland_gd(X, y, w0=None, T=max_iter, fit_intercept=fit_intercept, dummy_fir
 
 
 
-metrics = [train_loss, test_loss, test_accuracy]
+metrics = [train_loss, test_loss]#, test_accuracy]
 
 def run_repetition(rep):
     col_try, col_algo, col_metric, col_val, col_time = [], [], [], [], []
@@ -655,8 +655,8 @@ axes = g.axes.flatten()
 for ax in axes:
     ax.set_title("")
 
-_, y_high = axes[2].get_ylim()
-axes[2].set_ylim([0.75, y_high])
+# _, y_high = axes[2].get_ylim()
+# axes[2].set_ylim([0.75, y_high])
 
 # for i, dataset in enumerate(df["dataset"].unique()):
 #     axes[i].set_xticklabels([0, 1, 2, 5, 10, 20, 50], fontsize=14)
