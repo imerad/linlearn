@@ -52,7 +52,7 @@ random_state = 43
 max_iter = 100
 fit_intercept = True
 
-MOM_block_size = 0.1
+MOM_block_size = 0.05
 
 test_loss_meantype = "ordinary"
 
