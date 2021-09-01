@@ -49,15 +49,15 @@ step_size = 0.1
 
 random_state = 43
 
-max_iter = 100
+max_iter = 20
 fit_intercept = True
 
 MOM_block_size = 0.1
 
-test_loss_meantype = "mom"
+test_loss_meantype = "ordinary"
 
 n_samples = None
-n_repeats = 5
+n_repeats = 1
 
 logging.info("Parameters are : n_repeats = %d , n_samples = %d , max_ter = %d , fit_intercept=%r, MOM_block_size = %.2f, test_loss_meantype = %s" % (n_repeats, n_samples or 0, max_iter, fit_intercept, MOM_block_size, test_loss_meantype))
 
@@ -537,7 +537,7 @@ if save_results:
 
 
 g = sns.FacetGrid(
-    data, col="metric", height=4, legend_out=True
+    data, col="metric", height=4, legend_out=True, sharey=False
 )
 g.map(
     sns.lineplot,
@@ -549,7 +549,7 @@ g.map(
 
 #g.set_titles(col_template="{col_name}")
 
-g.set(ylim=(0, 1))
+#g.set(ylim=(0, 1))
 
 axes = g.axes.flatten()
 

@@ -36,17 +36,16 @@ def estimate_sigma(x, eps=0.001):
     return sigma
 
 @njit
-def Holland_catoni_estimator(x, eps=0.001):
+def Holland_catoni_estimator(x, eps=0.001, max_it=30):
     #if the array is constant, do not try to estimate scale
     # the following condition is supposed to reproduce np.allclose() behavior
     if (np.abs(x[0] - x) <= ((1e-8) + (1e-5) * np.abs(x[0]))).all():
         return x[0]
-
     s = estimate_sigma(x)*np.sqrt(len(x)/np.log(1/eps))
     m = 0
     diff = 1
     niter = 0
-    while diff > eps:
+    while diff > eps and niter < max_it:
         tmp = m + s * gud((x - m)/s).mean()
         diff = np.abs(tmp - m)
         m = tmp
@@ -144,13 +143,13 @@ def gmom_njit(xs, tol=1e-7):
     # print(niter)
     return y
 
-def gmom(xs, tol=1e-7):
+def gmom(xs, tol=1e-7, max_it=30):
     # from Vardi and Zhang 2000
     y = np.average(xs, axis=0)
     eps = 1e-10
     delta = 1
     niter = 0
-    while delta > tol:
+    while delta > tol and niter < max_it:
         xsy = xs - y
         dists = np.linalg.norm(xsy, axis=1)
         inv_dists = 1 / dists
