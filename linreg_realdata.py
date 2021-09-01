@@ -15,6 +15,7 @@ from tqdm import tqdm
 from sklearn.model_selection import train_test_split
 import sys, os
 import seaborn as sns
+from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
 import pandas as pd
 import time
@@ -56,17 +57,39 @@ outliers = False
 
 mom_thresholding = True
 mom_thresholding = False
-MOMreg_block_size = 0.02
+MOMreg_block_size = 0.07
 
 catoni_thresholding = True
 catoni_thresholding = False
 
 prasad_delta = 0.01
 
-random_seed = 42
+random_seed = 44
 test_size = 0.3
 
-dataset = "Diabetes"#"Boston"#"CaliforniaHousing"#
+dataset = "used_car"#"Diabetes"#"Boston"#"CaliforniaHousing"#
+
+def load_used_car():
+
+    csv = pd.read_csv("used_car/vw.csv")
+    csv["year"] = 2020 - csv["year"]
+    csv = csv.drop("model", axis=1)
+    categoricals = ["transmission", "fuelType"]#, "model"]
+    label = "price"
+    for cat in categoricals:
+        one_hot = pd.get_dummies(csv[cat], prefix=cat)
+        csv = csv.drop(cat, axis=1)
+        csv = csv.join(one_hot)
+    csv = pd.DataFrame(StandardScaler().fit_transform(csv), columns = csv.columns)
+    df_train, df_test = train_test_split(
+        csv,
+        test_size=test_size,
+        shuffle=True,
+        random_state=random_seed,
+    )
+    y_train = df_train.pop(label)
+    y_test = df_test.pop(label)
+    return df_train.to_numpy(), df_test.to_numpy(), y_train.to_numpy(), y_test.to_numpy()
 
 def load_data_boston():
     from sklearn.datasets import load_boston
@@ -114,6 +137,8 @@ elif dataset == "CaliforniaHousing":
     X_train, X_test, y_train, y_test = load_california_housing()
 elif dataset == "Diabetes":
     X_train, X_test, y_train, y_test = fetch_diabetes()
+elif dataset == "used_car":
+    X_train, X_test, y_train, y_test = load_used_car()
 else:
     raise ValueError("Unknown dataset")
 
@@ -129,22 +154,67 @@ Lip = np.max(
 n_samples, n_features = X_train.shape
 
 step_size = 0.05
-max_iter = 100
+max_iter = 50
 
 
-def risk(X, y, w, fit_intercept=fit_intercept):
+def risk(X, y, w, fit_intercept=fit_intercept, meantype="ordinary"):
     if fit_intercept:
         w0 = w[0]
         w1 = w[1:]
     else:
         w0 = 0
         w1 = w
-    return 0.5 * ((X @ w1 + w0 - y)**2).mean()
+
+    objectives = 0.5 * ((X @ w1 + w0 - y) ** 2)
+
+    if meantype == "ordinary":
+        obj = objectives.mean()
+    elif meantype == "catoni":
+        obj = Holland_catoni_estimator(objectives)
+    elif meantype == "mom":
+        obj = median_of_means(objectives, int(MOMreg_block_size*len(objectives)))
+    else:
+        raise ValueError("unknown mean")
+
+    if penalty:
+        if fit_intercept:
+            return obj + lamda * penalties[penalty](w[1:])
+        else:
+            return obj + lamda * penalties[penalty](w)
+    else:
+        return obj
 
 def train_risk(w, algo_name=""):
     return risk(X_train, y_train, w, fit_intercept=fit_intercept)
 def test_risk(w, algo_name=""):
-    return risk(X_test, y_test, w, fit_intercept=fit_intercept)
+    return risk(X_test, y_test, w, fit_intercept=fit_intercept, meantype="mom")
+
+penalty = "l2"#None#"l1"#
+lamda = 0.1#1/np.sqrt(X_train.shape[0])
+
+def l1_penalty(x):
+    return np.sum(np.abs(x))
+
+def l2_penalty(x):
+    return np.sum(x ** 2)
+
+def l1_apply_single(x, t):
+    if x > t:
+        return x - t
+    elif x < -t:
+        return x + t
+    else:
+        return 0.0
+
+def l1_apply(x, t):
+    for j in range(len(x)):
+        x[j] = l1_apply_single(x[j], t)
+
+def l2_apply(x, t):
+    x /= (1 + t)
+
+penalties = {"l1" : l1_penalty, "l2" : l2_penalty}
+penalties_apply = {"l1" : l1_apply, "l2" : l2_apply}
 
 
 logging.info(
@@ -205,8 +275,8 @@ def Holland_gradient(w):
     return catoni_avg_grad
 
 
-def Lecue_gradient(w, n_blocks=1+int(1 / MOMreg_block_size)):  # n_blocks must be uneven
-    assert n_blocks % 2 == 1
+def Lecue_gradient(w, n_blocks=int(1 / MOMreg_block_size)):  # n_blocks must be uneven
+    n_blocks += (n_blocks + 1) % 2 #ensure it is uneven
     if fit_intercept:
         w0 = w[0]
         w1 = w[1:]
@@ -291,13 +361,15 @@ def Prasad_outliers_gradient(w, eps=0.05, delta=prasad_delta):
 
 
 def linlearn_cgd(X, y, step_size, strategy="mom"):
-    logging.info("running %s" % strategy)
+    logging.info("running %s cgd" % strategy)
     MOM_regressor = MOMRegressor(
         tol=1e-17,
         max_iter=max_iter,
         fit_intercept=fit_intercept,
         strategy=strategy,
         thresholding=mom_thresholding,
+        penalty=penalty or "none",
+        C=1/(X.shape[0] * lamda) if penalty else 1.0,
         step_size=step_size,
         block_size=MOMreg_block_size,
     )
@@ -323,6 +395,8 @@ def gradient_descent(x0, grad, step_size, max_iter=max_iter):
     time_record = Record(1, max_iter)
     for t in tqdm(range(max_iter), desc=grad.__name__):
         x -= step_size * grad(x)
+        if penalty:
+            penalties_apply[penalty](x[int(fit_intercept):], lamda * step_size)
         param_record.update(x)
         time_record.update(time.time())
     return param_record, time_record
@@ -346,7 +420,7 @@ def run_repetition(rep):
 
     logging.info("Running algorithms ...")
 
-    for strategy in ["mom"]:#, "erm", "catoni"]:
+    for strategy in ["mom", "erm", "catoni"]:#]:#
         outputs[strategy+"_cgd"] = linlearn_cgd(X_train, y_train, step_size, strategy=strategy)
 
     for gradient in [
@@ -354,7 +428,7 @@ def run_repetition(rep):
         Holland_gradient,
         Prasad_HeavyTail_gradient,
         Lecue_gradient,
-        Prasad_outliers_gradient,
+        #Prasad_outliers_gradient,
     ]:
         logging.info("running %s" % gradient.__name__)
         outputs[gradient.__name__] = gradient_descent(
@@ -447,7 +521,7 @@ code_names = {
 axes[0].legend(
     [code_names[name] for name in data["algo"].unique()],
     # bbox_to_anchor=(0.3, 0.7, 1.0, 0.0),
-    loc="lower left",
+    #loc="lower left",
     ncol=2,
     borderaxespad=0.2,
     columnspacing=1.0,

@@ -117,7 +117,7 @@ OptimizationResult = namedtuple(
 
 # @njit
 def coordinate_gradient_descent(
-    loss, penalty, strategy, w, X, y, fit_intercept, steps, max_iter, tol, history, thresholding=False
+    loss, penalty, strategy, w, X, y, fit_intercept, steps, max_iter, tol, history, thresholding=False, dummy_first_step=False
 ):
     n_samples, n_features = X.shape
 
@@ -159,7 +159,7 @@ def coordinate_gradient_descent(
 
     @njit
     def coordinate_gradient_descent_cycle(
-        w, inner_products, coordinates, thresholds=None
+        w, inner_products, steps, coordinates, thresholds=None
     ):
         """This function implements one cycle of coordinate gradient descent
         """
@@ -242,12 +242,18 @@ def coordinate_gradient_descent(
 
     thresholds = compute_thresholds() if thresholding and strategy.name!="erm" else None
 
-    for cycle in range(1, max_iter + 1):
+    if dummy_first_step:
+        coordinates = permutation(w_size)
+        # Launch the coordinates cycle
+        max_abs_delta, max_abs_weight = coordinate_gradient_descent_cycle(w, inner_products, np.zeros_like(steps), coordinates, thresholds)
 
+    history.update(w, update_bar=False)
+    for cycle in range(1, max_iter + 1):
+        #print("%s iteration %d" % (strategy.name, cycle))
         # Sample a permutation of the coordinates
         coordinates = permutation(w_size)
         # Launch the coordinates cycle
-        max_abs_delta, max_abs_weight = coordinate_gradient_descent_cycle(w, inner_products, coordinates, thresholds)
+        max_abs_delta, max_abs_weight = coordinate_gradient_descent_cycle(w, inner_products, steps, coordinates, thresholds)
 
         # Compute the new value of objective
         # obj = objective(w)

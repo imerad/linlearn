@@ -242,7 +242,7 @@ class MOMBase(ClassifierMixin, BaseEstimator):
 
     # TODO: properties for class_weight=None, random_state=None, verbose=0, warm_start=False, n_jobs=None
 
-    def _get_solver(self, X, y, trackers=None):
+    def _get_solver(self, X, y, trackers=None, dummy_first_step=False):
         n_samples, n_features = X.shape
 
         # Get the loss object
@@ -285,6 +285,7 @@ class MOMBase(ClassifierMixin, BaseEstimator):
                         self.tol,
                         self.history_,
                         thresholding=self.thresholding,
+                        dummy_first_step=dummy_first_step
                     )
             else:
                 def solve(w):
@@ -307,7 +308,7 @@ class MOMBase(ClassifierMixin, BaseEstimator):
         else:
             raise NotImplementedError("%s is not implemented yet" % self.solver)
 
-    def fit(self, X, y, sample_weight=None, trackers=None):
+    def fit(self, X, y, sample_weight=None, trackers=None, dummy_first_step=False):
         """
         Fit the model according to the given training data.
 
@@ -426,7 +427,7 @@ class MOMBase(ClassifierMixin, BaseEstimator):
         #     )
 
         #######
-        solver = self._get_solver(X, y_encoded, trackers=trackers)
+        solver = self._get_solver(X, y_encoded, trackers=trackers, dummy_first_step=dummy_first_step)
         w = self._get_initial_iterate(X, y_encoded)
         optimization_result = solver(w)
 

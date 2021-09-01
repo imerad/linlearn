@@ -1,5 +1,5 @@
 from linlearn import BinaryClassifier
-from linlearn.robust_means import Holland_catoni_estimator, gmom, gmom_njit, median_of_means
+from linlearn.robust_means import Holland_catoni_estimator, median_of_means
 import numpy as np
 import logging
 import pickle
@@ -38,7 +38,7 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%Y-%m-%d %H:%M:%S", handlers=handlers
 )
 
-save_results = False
+save_results = True
 save_fig= True
 
 logging.info(64*"=")
@@ -49,24 +49,19 @@ step_size = 0.1
 
 random_state = 43
 
-max_iter = 20
+max_iter = 100
 fit_intercept = True
 
 MOM_block_size = 0.1
 
 test_loss_meantype = "ordinary"
 
-n_samples = None
-n_repeats = 1
-
-logging.info("Parameters are : n_repeats = %d , n_samples = %d , max_ter = %d , fit_intercept=%r, MOM_block_size = %.2f, test_loss_meantype = %s" % (n_repeats, n_samples or 0, max_iter, fit_intercept, MOM_block_size, test_loss_meantype))
-
 if not save_results:
     logging.info("WARNING : results will NOT be saved at the end of this session")
 
 logging.info("loading data ...")
 
-dataset = "Bank"#"Stroke"#"Heart"#"weatherAUS"#"Adult"#
+dataset = "Adult"#"weatherAUS"#"Heart"#"Bank"#"Stroke"#
 
 def load_heart(test_size=0.3):
     csv_heart = pd.read_csv("heart/heart.csv")
@@ -153,14 +148,20 @@ y_test = 2 * y_test - 1
 for dat in [X_train, X_test, y_train, y_test]:
     dat = np.ascontiguousarray(dat)
 
+n_samples = X_train.shape[0]
+n_repeats = 10
+
+logging.info("Parameters are : n_repeats = %d , n_samples = %d , max_ter = %d , fit_intercept=%r, MOM_block_size = %.2f, test_loss_meantype = %s" % (n_repeats, n_samples or 0, max_iter, fit_intercept, MOM_block_size, test_loss_meantype))
+
+
 #The below estimation is probably too sensitive to outliers
 #Lip = np.linalg.eigh((X_train.T @ X_train)/X_train.shape[0])[0][-1] # highest eigenvalue
 Lip = np.max([median_of_means(X_train[:,j]**2, int(MOM_block_size*X_train.shape[0])) for j in range(X_train.shape[1])])
 
 Lip_step = 1/(0.25*Lip) # 0.25 is Lipschitz smoothness of logistic loss
 
-penalty = None#"l2"
-lamda = 0.01#1/np.sqrt(X_train.shape[0])
+penalty = None#"l1"#
+lamda = 1/np.sqrt(X_train.shape[0])
 
 def l1_penalty(x):
     return np.sum(np.abs(x))
@@ -202,6 +203,28 @@ class Record(object):
     def __len__(self):
         return self.record.shape[0]
 
+def gmom(xs, tol=1e-7, max_it=30):
+    # from Vardi and Zhang 2000
+    y = np.average(xs, axis=0)
+    eps = 1e-10
+    delta = 1
+    niter = 0
+    while delta > tol and niter < max_it:
+        xsy = xs - y
+        dists = np.linalg.norm(xsy, axis=1)
+        inv_dists = 1 / dists
+        mask = dists < eps
+        inv_dists[mask] = 0
+        nb_too_close = (mask).sum()
+        ry = np.linalg.norm(np.dot(inv_dists, xsy))
+        cst = nb_too_close / ry
+        y_new = max(0, 1 - cst) * np.average(xs, axis=0, weights=inv_dists) + min(1, cst) * y
+        delta = np.linalg.norm(y - y_new)
+        y = y_new
+        niter += 1
+    # print(niter)
+    return y
+
 #@vectorize([float64(float64)])
 def logit(x):
     if x > 0:
@@ -239,7 +262,7 @@ def objective(X, y, w, fit_intercept=fit_intercept, lnlearn=False, meantype="ord
     elif meantype == "mom":
         obj = median_of_means(objectives, int(MOM_block_size*len(objectives)))
     else:
-        ValueError("unknown mean")
+        raise ValueError("unknown mean")
     if penalty:
         if fit_intercept:
             if lnlearn:
@@ -265,7 +288,7 @@ def gradient(X, y, w, fit_intercept=fit_intercept):
 
 linlearn_algorithms = ["mom_cgd", "catoni_cgd", "tmean_cgd"]
 
-def accuracy(X, y, w, fit_intercept=fit_intercept, lnlearn=False):
+def accuracy(X, y, w, fit_intercept=fit_intercept, lnlearn=False, meantype="ordinary"):
     if fit_intercept:
         w0 = w[0] if lnlearn else w[0]
         w1 = w[1] if lnlearn else w[1:]
@@ -273,7 +296,17 @@ def accuracy(X, y, w, fit_intercept=fit_intercept, lnlearn=False):
         w0 = 0
         w1 = w
     scores = X @ w1 + w0
-    return ((y*scores) > 0).astype(int).mean()
+
+    decisions = ((y*scores) > 0).astype(int).astype(float)
+    if meantype == "ordinary":
+        acc = decisions.mean()
+    elif meantype == "catoni":
+        acc = Holland_catoni_estimator(decisions)
+    elif meantype == "mom":
+        acc = median_of_means(decisions, int(MOM_block_size*len(decisions)))
+    else:
+        raise ValueError("unknown mean")
+    return acc
 
 
 def train_loss(w, algo_name=""):
@@ -282,20 +315,20 @@ def test_loss(w, algo_name=""):
     return objective(X_test, y_test, w, fit_intercept=fit_intercept, lnlearn=algo_name in linlearn_algorithms, meantype=test_loss_meantype)
 
 def test_accuracy(w, algo_name=""):
-    return accuracy(X_test, y_test, w, fit_intercept=fit_intercept, lnlearn=algo_name in linlearn_algorithms)
+    return accuracy(X_test, y_test, w, fit_intercept=fit_intercept, lnlearn=algo_name in linlearn_algorithms, meantype=test_loss_meantype)
 
 
 def linlearn_cgd(X_train, y_train, strategy="mom"):
 
     mom_logreg = BinaryClassifier(tol=1e-17, max_iter=max_iter, strategy=strategy, fit_intercept=fit_intercept, penalty=penalty or "none", C=1/(X_train.shape[0] * lamda) if penalty else 1.0,
                               step_size=step_size, loss="logistic", block_size=MOM_block_size)
-    param_record = Record((X_train.shape[1]+int(fit_intercept),), max_iter)
-    time_record = Record(1, max_iter)
+    param_record = Record((X_train.shape[1]+int(fit_intercept),), max_iter+1)
+    time_record = Record(1, max_iter+1)
 
     # param_record.update(np.zeros(X_train.shape[1]+int(fit_intercept)))
     # time_record.update(time.time())
 
-    mom_logreg.fit(X_train, y_train, trackers=[lambda w: param_record.update(np.vstack(w).flatten()), lambda _:time_record.update(time.time())])
+    mom_logreg.fit(X_train, y_train, trackers=[lambda w: param_record.update(np.vstack(w).flatten()), lambda _:time_record.update(time.time())], dummy_first_step=True)
 
     return param_record, time_record
 
@@ -306,8 +339,8 @@ def SAGA(X, y, w0=None, fit_intercept=fit_intercept):
     else:
         wt = w0
 
-    param_record = Record((X.shape[1]+int(fit_intercept),), max_iter)
-    time_record = Record(1, max_iter)
+    param_record = Record((X.shape[1]+int(fit_intercept),), max_iter+1)
+    time_record = Record(1, max_iter+1)
 
     table = X @ wt[1:] + wt[0] if fit_intercept else X @ wt
     table = -y * vec_sigmoid(-y * table)
@@ -318,6 +351,8 @@ def SAGA(X, y, w0=None, fit_intercept=fit_intercept):
 
     step = step_size*Lip_step/X.shape[0]
 
+    param_record.update(wt)
+    time_record.update(time.time())
     for i in tqdm(range(max_iter), desc="SAGA"):
         for sam in range(X.shape[0]):
             j = np.random.randint(X.shape[0])
@@ -348,9 +383,11 @@ def SVRG(X, y, w0=None, T=max_iter, fit_intercept=fit_intercept):
     step = step_size*Lip_step/(X.shape[0])
     m = X.shape[0]
 
-    param_record = Record((X.shape[1]+int(fit_intercept),), max_iter)
-    time_record = Record(1, max_iter)
+    param_record = Record((X.shape[1]+int(fit_intercept),), max_iter+1)
+    time_record = Record(1, max_iter+1)
 
+    param_record.update(wt)
+    time_record.update(time.time())
     for i in tqdm(range(T), desc="SVRG"):
         mu = gradient(X, y, w_tilde, fit_intercept=fit_intercept)
 
@@ -369,24 +406,39 @@ def SVRG(X, y, w0=None, T=max_iter, fit_intercept=fit_intercept):
 
 
 
-def Prasad_heavyTails_gd(X, y, w0=None, T=max_iter, fit_intercept=fit_intercept, delta=0.01):
+def Prasad_heavyTails_gd(X, y, w0=None, T=max_iter, fit_intercept=fit_intercept, delta=0.01, dummy_first_step=True):
     if w0 is None:
         w0 = np.zeros((X.shape[1] + int(fit_intercept)))
     n_blocks = 1 + int(3.5 * np.log(1 / delta))
     block_size = X.shape[0] // n_blocks
-    wt = w0
+    wt = w0.copy()
 
-    param_record = Record((X.shape[1]+int(fit_intercept),), max_iter)
-    time_record = Record(1, max_iter)
+    param_record = Record((X.shape[1]+int(fit_intercept),), max_iter+1)
+    time_record = Record(1, max_iter+1)
     step = step_size*Lip_step
 
-    for i in tqdm(range(T), desc = "prasad_heavy_tail"):
+    if dummy_first_step:
         gradients = sample_gradients(X, y, wt, fit_intercept=fit_intercept)
         permutation = np.random.permutation(X.shape[0])
         block_means = []
         for j in range(n_blocks):
             block_means.append(np.mean(gradients[permutation[j * block_size:(j + 1) * block_size], :], axis=0).reshape(-1))
         grad = gmom(np.array(block_means)).reshape(wt.shape)
+        wt -= step * grad
+        if penalty:
+            penalties_apply[penalty](wt[int(fit_intercept):], lamda * step)
+        wt = w0.copy() #reset
+    block_means = np.zeros((n_blocks, len(w0)))
+
+    param_record.update(wt)
+    time_record.update(time.time())
+    for i in tqdm(range(T), desc = "prasad_heavy_tail"):
+        gradients = sample_gradients(X, y, wt, fit_intercept=fit_intercept)
+        permutation = np.random.permutation(X.shape[0])
+
+        for j in range(n_blocks):
+            block_means[j] = np.mean(gradients[permutation[j * block_size:(j + 1) * block_size], :], axis=0).reshape(-1)
+        grad = gmom(block_means).reshape(wt.shape)
         wt -= step * grad
 
         if penalty:
@@ -409,10 +461,12 @@ def Lecue_gd(X, y, w0=None, T=max_iter, fit_intercept=fit_intercept, n_blocks=21
         return np.argpartition(x, len(x) // 2)[len(x) // 2]
     block_size = X.shape[0] // n_blocks
     wt = w0
-    param_record = Record((X.shape[1]+int(fit_intercept),), max_iter)
-    time_record = Record(1, max_iter)
+    param_record = Record((X.shape[1]+int(fit_intercept),), max_iter+1)
+    time_record = Record(1, max_iter+1)
     step = step_size*Lip_step
 
+    param_record.update(wt)
+    time_record.update(time.time())
     for i in tqdm(range(T), desc = "Lecue"):
 
         objectives = sample_objectives(X, y, wt, fit_intercept=fit_intercept)
@@ -436,17 +490,49 @@ def Lecue_gd(X, y, w0=None, T=max_iter, fit_intercept=fit_intercept, n_blocks=21
 
     return param_record, time_record
 
-def Holland_gd(X, y, w0=None, T=max_iter, fit_intercept=fit_intercept):
+def ERM_gd(X, y, w0=None, T=max_iter, fit_intercept=fit_intercept):
     if w0 is None:
         w0 = np.zeros((X.shape[1] + int(fit_intercept)))
     wt = w0
-    param_record = Record((X.shape[1]+int(fit_intercept),), max_iter)
-    time_record = Record(1, max_iter)
+    param_record = Record((X.shape[1]+int(fit_intercept),), max_iter+1)
+    time_record = Record(1, max_iter+1)
+    step = step_size*Lip_step
+
+    param_record.update(wt)
+    time_record.update(time.time())
+    for i in tqdm(range(T), desc = "ERM"):
+
+        grad = gradient(X, y, wt, fit_intercept=fit_intercept)
+        wt -= step * grad
+        if penalty:
+            penalties_apply[penalty](wt[int(fit_intercept):], lamda * step)
+
+        param_record.update(wt)
+        time_record.update(time.time())
+
+    return param_record, time_record
+
+def Holland_gd(X, y, w0=None, T=max_iter, fit_intercept=fit_intercept, dummy_first_step=True):
+    if w0 is None:
+        w0 = np.zeros((X.shape[1] + int(fit_intercept)))
+    wt = w0.copy()
+    param_record = Record((X.shape[1]+int(fit_intercept),), max_iter+1)
+    time_record = Record(1, max_iter+1)
     catoni_avg_grad = np.zeros_like(wt)
     step = step_size*Lip_step
-    for i in range(10):
-        Holland_catoni_estimator(np.random.randn(100))
 
+    if dummy_first_step:
+        gradients = sample_gradients(X, y, wt, fit_intercept=fit_intercept)
+        for k in range(len(wt)):
+            catoni_avg_grad[k] = Holland_catoni_estimator(gradients[:, k])
+
+        wt -= step * catoni_avg_grad
+        if penalty:
+            penalties_apply[penalty](wt[int(fit_intercept):], lamda * step)
+        wt = w0.copy() #reset
+
+    param_record.update(wt)
+    time_record.update(time.time())
     for i in tqdm(range(T), desc="Holland"):
         gradients = sample_gradients(X, y, wt, fit_intercept=fit_intercept)
         for k in range(len(wt)):
@@ -486,6 +572,9 @@ def run_repetition(rep):
 
     outputs["Lecue_gd"] = Lecue_gd(X_train, y_train)
     announce("Lecue_gd")
+
+    outputs["ERM_gd"] = ERM_gd(X_train, y_train)
+    announce("ERM_gd")
 
     outputs["Holland"] = Holland_gd(X_train, y_train)
     announce("Holland")
@@ -535,6 +624,17 @@ if save_results:
 
     logging.info("Saved results in file %s" % filename)
 
+code_names = {
+    "ERM_gd": "erm",
+    "Holland": "holland",
+    "mom_cgd": "mom_cgd",
+    "erm_cgd": "erm_cgd",
+    "Prasad_heavyTails_gd": "gmom_grad",
+    "Lecue_gd": "implicit",
+    "catoni_cgd":"catoni_cgd",
+    "tmean_cgd":"tmean_cgd",
+    "Prasad_outliers_gradient":"Prasad_outliers_gradient"
+}
 
 g = sns.FacetGrid(
     data, col="metric", height=4, legend_out=True, sharey=False
@@ -550,8 +650,13 @@ g.map(
 #g.set_titles(col_template="{col_name}")
 
 #g.set(ylim=(0, 1))
-
 axes = g.axes.flatten()
+
+for ax in axes:
+    ax.set_title("")
+
+_, y_high = axes[2].get_ylim()
+axes[2].set_ylim([0.75, y_high])
 
 # for i, dataset in enumerate(df["dataset"].unique()):
 #     axes[i].set_xticklabels([0, 1, 2, 5, 10, 20, 50], fontsize=14)
@@ -559,9 +664,9 @@ axes = g.axes.flatten()
 
 
 plt.legend(
-    list(data["algorithm"].unique()),
+    [code_names[name] for name in list(data["algorithm"].unique())],#list(data["algorithm"].unique()),#[code_names[name] for name in list(data["algorithm"].unique())],#
     #bbox_to_anchor=(0.3, 0.7, 1.0, 0.0),
-    loc="upper center",
+    loc="upper right",
     #ncol=1,
     #borderaxespad=0.0,
     #fontsize=14,
@@ -575,7 +680,7 @@ plt.show()
 if save_fig:
     now = datetime.now().strftime("%Y-%m-%d-%H:%M:%S")
     ensure_directory("exp_archives/logitlasso/")
-    #specs = 'n%d_%s%.2f_block_size=%.2f_w_dist=%s' % (n_samples, noise_dist, noise_sigma[noise_dist], MOMreg_block_size, w_star_dist)
-    fig_file_name = "exp_archives/logitlasso/" + dataset + now + ".pdf"
+    specs = '%s_meantype=%s_' % (dataset, test_loss_meantype)
+    fig_file_name = "exp_archives/logitlasso/" + specs + now + ".pdf"
     g.fig.savefig(fname=fig_file_name)#, bbox_inches='tight')
     logging.info("Saved figure into file : %s" % fig_file_name)

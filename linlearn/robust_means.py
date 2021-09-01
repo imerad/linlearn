@@ -18,6 +18,13 @@ def khi(x):
 def gud(x):
     return 2*np.arctan(np.exp(x)) - np.pi/2 if x < 12 else np.pi/2
 
+# def gud_nonjit(x):
+#     return 2*np.arctan(np.exp(x)) - np.pi/2 if x < 12 else np.pi/2
+# vec_gud_nonjit = np.vectorize(gud_nonjit)
+#
+# def khi_nonjit(x):
+#     return 1 - 0.34 - 1/(1 + x*x)#np.log(0.5 + x*x)#
+# vec_khi_nonjit = np.vectorize(khi_nonjit)
 
 @njit
 def estimate_sigma(x, eps=0.001):
@@ -34,6 +41,21 @@ def estimate_sigma(x, eps=0.001):
         niter += 1
     #print(niter)
     return sigma
+#
+# def estimate_sigma_nonjit(x, eps=0.001):
+#     sigma = 1
+#     ar = x#np.array(x)
+#     avg = ar.mean()
+#     diff = 1
+#     khi0 = vec_khi_nonjit(0)
+#     niter = 0
+#     while diff > eps:
+#         tmp = sigma * np.sqrt(1 - (vec_khi_nonjit((ar - avg)/sigma)).mean()/khi0)
+#         diff = np.abs(tmp - sigma)
+#         sigma = tmp
+#         niter += 1
+#     #print(niter)
+#     return sigma
 
 @njit
 def Holland_catoni_estimator(x, eps=0.001, max_it=30):
@@ -52,6 +74,23 @@ def Holland_catoni_estimator(x, eps=0.001, max_it=30):
         niter += 1
     #print(niter)
     return m
+#
+# def Holland_catoni_estimator_nonjit(x, eps=0.001, max_it=30):
+#     #if the array is constant, do not try to estimate scale
+#     # the following condition is supposed to reproduce np.allclose() behavior
+#     if (np.abs(x[0] - x) <= ((1e-8) + (1e-5) * np.abs(x[0]))).all():
+#         return x[0]
+#     s = estimate_sigma_nonjit(x)*np.sqrt(len(x)/np.log(1/eps))
+#     m = 0
+#     diff = 1
+#     niter = 0
+#     while diff > eps and niter < max_it:
+#         tmp = m + s * vec_gud_nonjit((x - m)/s).mean()
+#         diff = np.abs(tmp - m)
+#         m = tmp
+#         niter += 1
+#     #print(niter)
+#     return m
 
 from scipy.optimize import brentq
 
