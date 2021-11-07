@@ -210,7 +210,7 @@ def compute_steps(X, solver, estimator, fit_intercept, lip_const, percentage=0.0
                 )
             # TODO : this is just an upper bound
             n_blocks += n_blocks % 2 + 1
-            n_samples_in_block = n_samples // n_blocks
+            n_samples_in_block = max(1, n_samples // n_blocks)
             block_means = np.empty(n_blocks, dtype=X.dtype)
             # sum_sq = np.zeros(n_samples)
             # for i in range(n_samples):
