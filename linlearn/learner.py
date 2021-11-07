@@ -352,7 +352,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             return ERM(X, y, loss, self.n_classes, self.fit_intercept)
         elif self.estimator == "mom":
             n_samples = y.shape[0]
-            n_samples_in_block = int(self.block_size * n_samples)
+            n_samples_in_block = max(int(self.block_size * n_samples), 1)
             return MOM(
                 X, y, loss, self.n_classes, self.fit_intercept, n_samples_in_block
             )
@@ -364,11 +364,11 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             return CH(X, y, loss, self.n_classes, self.fit_intercept, self.eps)
         elif self.estimator == "llm":
             return LLM(
-                X, y, loss, self.n_classes, self.fit_intercept, int(1 / self.block_size)
+                X, y, loss, self.n_classes, self.fit_intercept, max(int(1 / self.block_size), 1)
             )
         elif self.estimator == "gmom":
             n_samples = y.shape[0]
-            n_samples_in_block = int(self.block_size * n_samples)
+            n_samples_in_block = max(int(self.block_size * n_samples), 1)
             return GMOM(
                 X, y, loss, self.n_classes, self.fit_intercept, n_samples_in_block
             )

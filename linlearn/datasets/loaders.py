@@ -74,7 +74,7 @@ def load_californiahousing():
     data = fetch_california_housing(as_frame=True)
     df = data["frame"]
     continuous_columns = [col for col in df.columns if col != "MedHouseVal"]
-    categorical_columns = None
+    categorical_columns = []
     dataset = Dataset(
         name="californiahousing",
         task="regression",
