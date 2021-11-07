@@ -225,7 +225,7 @@ def compute_steps(X, solver, estimator, fit_intercept, lip_const, percentage=0.0
             sum_block = 0.0
             # Block counter
             counter = 0
-            for i, idx in enumerate(sample_indices):
+            for i, idx in enumerate(sample_indices[:n_blocks*n_samples_in_block]):
                 sum_block += square_norms[idx]
                 if (i != 0) and ((i + 1) % n_samples_in_block == 0):
                     block_means[counter] = sum_block / n_samples_in_block
