@@ -616,6 +616,7 @@ def run_hyperopt(
     results = {
         "dataset": dataset.name,
         "learner": learner_name,
+        "corruption_rate": corruption_rate,
         "iteration_df": iteration_df,
         "finals_df": finals_df,
         "best_parameter": best_param,
@@ -680,7 +681,8 @@ if __name__ == "__main__":
 
     learner_name = args.learner_name
     max_hyperopt_eval = args.hyperopt_evals
-    loader = set_dataloader(args.dataset_name.lower())
+    dataset_name = args.dataset_name.lower()
+    loader = set_dataloader(dataset_name)
     random_state_seed = args.random_state_seed
     corruption_rate = args.corruption_rate
 
@@ -728,6 +730,8 @@ if __name__ == "__main__":
     filename = (
         "exp_hyperopt_"
         + str(max_hyperopt_eval)
+        + "_"
+        + dataset_name + str(corruption_rate)
         + "_"
         + learner_name
         + "_"
