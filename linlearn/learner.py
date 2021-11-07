@@ -414,7 +414,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
                                      n_samples_in_block, self.eps)
         else:
             step = compute_steps(X, self.solver, self.estimator, self.fit_intercept, loss.lip, self.percentage,
-                                 int(1 / self.block_size), self.eps)
+                                 max(1, int(1 / self.block_size)), self.eps)
 
         step *= self.step_size
 
