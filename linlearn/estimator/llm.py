@@ -54,6 +54,8 @@ class LLM(Estimator):
         super().__init__(X, y, loss, n_classes, fit_intercept)
         # n_blocks must be uneven
         self.n_blocks = n_blocks + ((n_blocks + 1) % 2)
+        if self.n_blocks >= self.n_samples:
+            self.n_blocks = self.n_samples - (self.n_samples % 2 + 1)
         self.n_samples_in_block = self.n_samples // n_blocks
         # no last block size, the remaining samples are just ignored
         # self.last_block_size = self.n_samples % self.n_samples_in_block
