@@ -76,6 +76,7 @@ class LLM(Estimator):
         X = self.X
         y = self.y
         n_samples_in_block = self.n_samples_in_block
+        n_blocks = self.n_blocks
         loss = self.loss
         n_classes = self.n_classes
         value_loss = loss.value_factory()
@@ -93,7 +94,7 @@ class LLM(Estimator):
                 objectives_sum_block = 0.0
                 # Block counter
                 counter = 0
-                for i, idx in enumerate(sample_indices):
+                for i, idx in enumerate(sample_indices[:n_blocks*n_samples_in_block]):
                     objectives_sum_block += value_loss(y[idx], inner_products[idx])
                     if (i != 0) and ((i + 1) % n_samples_in_block == 0):
                         block_means[counter] = objectives_sum_block / n_samples_in_block
@@ -139,7 +140,7 @@ class LLM(Estimator):
                 objectives_sum_block = 0.0
                 # Block counter
                 counter = 0
-                for i, idx in enumerate(sample_indices):
+                for i, idx in enumerate(sample_indices[:n_blocks*n_samples_in_block]):
                     objectives_sum_block += value_loss(y[idx], inner_products[idx])
                     if (i != 0) and ((i + 1) % n_samples_in_block == 0):
                         block_means[counter] = objectives_sum_block / n_samples_in_block
@@ -171,6 +172,7 @@ class LLM(Estimator):
         value_loss = loss.value_factory()
         deriv_loss = loss.deriv_factory()
         n_samples_in_block = self.n_samples_in_block
+        n_blocks = self.n_blocks
         n_classes = self.n_classes
         n_features = self.n_features
 
@@ -189,7 +191,7 @@ class LLM(Estimator):
                 objectives_sum_block = 0.0
                 # Block counter
                 counter = 0
-                for i, idx in enumerate(sample_indices):
+                for i, idx in enumerate(sample_indices[:n_blocks*n_samples_in_block]):
                     objectives_sum_block += value_loss(y[idx], inner_products[idx])
                     if (i != 0) and ((i + 1) % n_samples_in_block == 0):
                         block_means[counter] = objectives_sum_block / n_samples_in_block
@@ -235,7 +237,7 @@ class LLM(Estimator):
                 objectives_sum_block = 0.0
                 # Block counter
                 counter = 0
-                for i, idx in enumerate(sample_indices):
+                for i, idx in enumerate(sample_indices[:n_blocks*n_samples_in_block]):
                     objectives_sum_block += value_loss(y[idx], inner_products[idx])
                     if (i != 0) and ((i + 1) % n_samples_in_block == 0):
                         block_means[counter] = objectives_sum_block / n_samples_in_block
