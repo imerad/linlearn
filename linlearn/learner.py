@@ -407,7 +407,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         # The strength is scaled using following scikit-learn's scaling
         # strength = 1 / (self.C * n_samples)
         # penalty = penalty_factory(strength=strength, l1_ratio=self.l1_ratio)
-        n_samples_in_block = int(n_samples * self.block_size)
+        n_samples_in_block = max(int(n_samples * self.block_size), 1)
 
         if self.solver == "cgd":
             step = compute_steps_cgd(X, self.estimator, self.fit_intercept, loss.lip, self.percentage,
