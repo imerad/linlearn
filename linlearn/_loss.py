@@ -210,20 +210,22 @@ def compute_steps(X, solver, estimator, fit_intercept, lip_const, percentage=0.0
                 )
             # TODO : this is just an upper bound
             n_blocks += n_blocks % 2 + 1
-            n_samples_in_block = max(1, n_samples // n_blocks)
+            if n_blocks >= n_samples:
+                n_blocks = n_samples - (n_samples % 2 + 1)
+            n_samples_in_block = n_samples // n_blocks
             block_means = np.empty(n_blocks, dtype=X.dtype)
             # sum_sq = np.zeros(n_samples)
             # for i in range(n_samples):
             #     for j in range(n_features):
             #         sum_sq[i] += X[i, j] * X[i, j]
             square_norms = sum_sq(X, 1)
-            sample_indices = np.arange(n_blocks * n_samples_in_block)# np.arange(n_samples)
+            sample_indices = np.arange(n_samples)#np.arange(n_blocks * n_samples_in_block)#
             np.random.shuffle(sample_indices)
             # Cumulative sum in the block
             sum_block = 0.0
             # Block counter
             counter = 0
-            for i, idx in enumerate(sample_indices[:n_samples_in_block*n_blocks]):
+            for i, idx in enumerate(sample_indices):
                 sum_block += square_norms[idx]
                 if (i != 0) and ((i + 1) % n_samples_in_block == 0):
                     block_means[counter] = sum_block / n_samples_in_block
