@@ -419,6 +419,11 @@ def run_hyperopt(
     test_perc = 0.1
     assert train_perc + val_perc + test_perc == 1.0
 
+    if dataset.name == "internet":
+        counts_dict = dict(dataset.df_raw[dataset.label_column].value_counts())
+        too_few = [k for k in counts_dict.keys() if counts_dict[k] < 20]
+        dataset.df_raw = dataset.df_raw[~dataset.df_raw[dataset.label_column].isin(too_few)]
+
     dataset.test_size = val_perc + test_perc
     X_train, X_te, y_train, y_te = dataset.extract_corrupt(
         corruption_rate=corruption_rate, random_state=random_states["data_extract_random_state"]
@@ -431,6 +436,11 @@ def run_hyperopt(
         random_state=random_states["train_val_split_random_state"],
         stratify=y_te if learning_task.endswith("classification") else None,
     )
+
+    if dataset.name == "kick":
+        X_train = np.nan_to_num(X_train)
+        X_val = np.nan_to_num(X_val)
+        X_test = np.nan_to_num(X_test)
 
     exp = set_experiment(
         learner_name,
