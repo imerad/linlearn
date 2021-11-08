@@ -285,6 +285,43 @@ class MOM_CGD_Experiment(Experiment):
         )
         return params_
 
+class ERM_GD_Experiment(Experiment):
+
+    def __init__(
+        self,
+        learning_task,
+        max_hyperopt_evals=50,
+        random_state=0,
+        output_folder_path="./",
+    ):
+        Experiment.__init__(
+            self,
+            learning_task,
+            max_hyperopt_evals,
+            random_state,
+            output_folder_path,
+        )
+
+        # hard-coded params search space here
+        self.space = {
+            "C": hp.loguniform("C", min_C_reg, max_C_reg),
+        }
+        # hard-coded default params here
+        self.default_params = {"C": 1}
+        self.default_params = self.preprocess_params(self.default_params)
+        self.title = "erm_gd"
+
+    def preprocess_params(self, params):
+        params_ = params.copy()
+        params_.update(
+            {
+                "estimator": "erm",
+                "solver": "gd",
+                "random_state": self.random_state,
+            }
+        )
+        return params_
+
 class TMEAN_CGD_Experiment(Experiment):
 
     def __init__(

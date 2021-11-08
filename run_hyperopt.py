@@ -58,6 +58,7 @@ from experiment import (  # noqa: E402
     TMEAN_CGD_Experiment,
     LLM_GD_Experiment,
     GMOM_GD_Experiment,
+    ERM_GD_Experiment,
 )
 
 
@@ -100,6 +101,12 @@ def set_experiment(
             output_folder_path=output_folder_path,
         ),
         "GMOM_GD": GMOM_GD_Experiment(
+            learning_task,
+            max_hyperopt_evals=max_hyperopt_eval,
+            random_state=expe_random_states,
+            output_folder_path=output_folder_path,
+        ),
+        "ERM_GD": ERM_GD_Experiment(
             learning_task,
             max_hyperopt_evals=max_hyperopt_eval,
             random_state=expe_random_states,
@@ -643,6 +650,7 @@ if __name__ == "__main__":
             "CH_GD",
             "LLM_GD",
             "GMOM_GD",
+            "ERM_GD",
         ],
     )
     parser.add_argument(
