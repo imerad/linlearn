@@ -56,7 +56,7 @@ class LLM(Estimator):
         self.n_blocks = n_blocks + ((n_blocks + 1) % 2)
         if self.n_blocks >= self.n_samples:
             self.n_blocks = self.n_samples - (self.n_samples % 2 + 1)
-        self.n_samples_in_block = self.n_samples // n_blocks
+        self.n_samples_in_block = max(1, self.n_samples // n_blocks)
         # no last block size, the remaining samples are just ignored
         # self.last_block_size = self.n_samples % self.n_samples_in_block
         # if self.last_block_size > 0:
