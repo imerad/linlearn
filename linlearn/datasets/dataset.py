@@ -412,7 +412,7 @@ class Dataset:
 
         for cat_col in self.categorical_columns + [self.label_column]:
             # print("corrupting column : %s"%cat_col)
-            dist = df_train[cat_col].value_counts(normalize=True).apply(lambda x: 1/x)
+            dist = df_train[cat_col].value_counts(normalize=True).apply(lambda x: 1/max(1e-8, x))
             dist = dist.apply(lambda x: x/dist.sum())
             # numbers = np.arange(len(dist.index))
             # choices = list(dist.index)
