@@ -396,34 +396,35 @@ class Dataset:
             stratify=stratify,
         )
 
-        # introduce corruption here
-        rng = np.random.RandomState(random_state)
-        n_samples_train = len(df_train)
-        corrupted_indices = rng.choice(df_train.index, size=int(corruption_rate * n_samples_train), replace=False)
+        if corruption_rate > 0:
+            # introduce corruption here
+            rng = np.random.RandomState(random_state)
+            n_samples_train = len(df_train)
+            corrupted_indices = rng.choice(df_train.index, size=int(corruption_rate * n_samples_train), replace=False)
 
-        for cnt_col in self.continuous_columns:
-            # print("corrupting column : %s"%cnt_col)
-            minmax = (df_train[cnt_col].min(), df_train[cnt_col].max())
-            range = minmax[1] - minmax[0]
-            for i in corrupted_indices:
-                updown = rng.randint(2)
-                sign = 2*updown-1
-                df_train.loc[i, cnt_col] = minmax[updown] + sign*rng.rand()*range
+            for cnt_col in self.continuous_columns:
+                # print("corrupting column : %s"%cnt_col)
+                minmax = (df_train[cnt_col].min(), df_train[cnt_col].max())
+                range = minmax[1] - minmax[0]
+                for i in corrupted_indices:
+                    updown = rng.randint(2)
+                    sign = 2*updown-1
+                    df_train.loc[i, cnt_col] = minmax[updown] + sign*rng.rand()*range
 
-        for cat_col in self.categorical_columns + [self.label_column]:
-            # print("corrupting column : %s"%cat_col)
-            dist = df_train[cat_col].value_counts(normalize=True).apply(lambda x: 1/max(1e-8, x))
-            dist = dist.apply(lambda x: x/dist.sum())
-            # numbers = np.arange(len(dist.index))
-            # choices = list(dist.index)
-            for i in corrupted_indices:
-                df_train.loc[i, cat_col] = rng.choice(dist.index, p=dist)
+            for cat_col in self.categorical_columns + [self.label_column]:
+                # print("corrupting column : %s"%cat_col)
+                dist = df_train[cat_col].value_counts(normalize=True).apply(lambda x: 1/max(1e-8, x))
+                dist = dist.apply(lambda x: x/dist.sum())
+                # numbers = np.arange(len(dist.index))
+                # choices = list(dist.index)
+                for i in corrupted_indices:
+                    df_train.loc[i, cat_col] = rng.choice(dist.index, p=dist)
 
-        # finished introducing corruption
+            # finished introducing corruption
 
-        # ensure we have only modified data and not introduced new rows
-        # (previously a bug with data frame indices ...)
-        assert len(df_train) == n_samples_train
+            # ensure we have only modified data and not introduced new rows
+            # (previously a bug with data frame indices ...)
+            assert len(df_train) == n_samples_train
 
         self.transformer = self.transformer.fit(df_train)
         X_train = self.transformer.transform(df_train)
