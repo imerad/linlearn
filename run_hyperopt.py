@@ -670,12 +670,12 @@ if __name__ == "__main__":
             "satimage",
             "sensorless",
             "spambase",
-            # "amazon",
-            # "covtype",
-            # "internet",
-            # "kick",
-            # "kddcup",
-            # "higgs",
+            "amazon",
+            "covtype",
+            "internet",
+            "kick",
+            "kddcup",
+            "higgs",
         ],
     )
     parser.add_argument("-n", "--hyperopt_evals", type=int, default=50)
