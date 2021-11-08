@@ -354,7 +354,7 @@ class Dataset:
 
 
     def extract_corrupt(self, corruption_rate=0.0, random_state=None):
-        self._build_transform(robust_scaler=True)
+        self._build_transform(robust_scaler=False)#True)
         df = self.df_raw
         # Don't put self.n_features_ = df.shape[1] since for now df contains the
         # column label
