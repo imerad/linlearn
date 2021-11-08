@@ -230,7 +230,7 @@ def load_diabetes():
     data = load_diabetes(as_frame=True)
     df = data["frame"]
     continuous_columns = [col for col in df.columns if col != "target"]
-    categorical_columns = None
+    categorical_columns = []
     dataset = Dataset(
         name="diabetes",
         task="regression",
