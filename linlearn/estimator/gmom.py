@@ -81,7 +81,6 @@ class GMOM(Estimator):
     def __init__(self, X, y, loss, n_classes, fit_intercept, n_samples_in_block):
         super().__init__(X, y, loss, n_classes, fit_intercept)
         self.n_samples_in_block = n_samples_in_block
-        print("n_samples_in_block : %d"%n_samples_in_block)
         self.n_blocks = self.n_samples // n_samples_in_block
         self.last_block_size = self.n_samples % n_samples_in_block
         if self.last_block_size > 0:
