@@ -401,17 +401,25 @@ class Dataset:
             rng = np.random.RandomState(random_state)
             n_samples_train = len(df_train)
             corrupted_indices = rng.choice(df_train.index, size=int(corruption_rate * n_samples_train), replace=False)
+            cont_cols = self.continuous_columns
+            cat_cols = self.categorical_columns
 
-            for cnt_col in self.continuous_columns:
+            if self.task == "regression":
+                cont_cols += [self.label_column]
+            else:
+                cat_cols += [self.label_column]
+
+
+            for cnt_col in cont_cols:
                 # print("corrupting column : %s"%cnt_col)
                 minmax = (df_train[cnt_col].min(), df_train[cnt_col].max())
                 range = minmax[1] - minmax[0]
                 for i in corrupted_indices:
                     updown = rng.randint(2)
                     sign = 2*updown-1
-                    df_train.loc[i, cnt_col] = minmax[updown] + sign*rng.rand()*range
+                    df_train.loc[i, cnt_col] = minmax[updown] + sign * (3 + 2 * rng.rand()) * range
 
-            for cat_col in self.categorical_columns + [self.label_column]:
+            for cat_col in cat_cols:
                 # print("corrupting column : %s"%cat_col)
                 dist = df_train[cat_col].value_counts(normalize=True).apply(lambda x: 1/max(1e-8, x))
                 dist = dist.apply(lambda x: x/dist.sum())
