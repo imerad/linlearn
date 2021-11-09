@@ -409,7 +409,7 @@ class Dataset:
                 for i in corrupted_indices:
                     updown = rng.randint(2)
                     sign = 2*updown-1
-                    df_train.loc[i, cnt_col] = minmax[updown] + sign * (3 + 2 * rng.rand()) * range
+                    df_train.loc[i, cnt_col] = minmax[updown] + sign * (10 + 5 * rng.rand()) * range
 
             for cat_col in self.categorical_columns + [self.label_column]:
                 # print("corrupting column : %s"%cat_col)

@@ -52,9 +52,14 @@ def gmom_njit(xs, tol=1e-10):
         ry = np.sqrt(
             np.sum(np.dot(inv_dists, xsy) ** 2)
         )  # np.linalg.norm(np.dot(inv_dists, xsy))
+        # if ry == 0:
+        #     raise ValueError
         cst = nb_too_close / ry
+        sum_inv_dists = np.sum(inv_dists)
+        # if sum_inv_dists == 0:
+        #     raise ValueError
         y_new = (
-            max(0, 1 - cst) * np.dot(inv_dists, xs) / np.sum(inv_dists)
+            max(0, 1 - cst) * np.dot(inv_dists, xs) / sum_inv_dists
             + min(1, cst) * y
         )
         delta = np.sqrt(np.sum((y - y_new) ** 2))  # np.linalg.norm(y - y_new)
@@ -81,6 +86,8 @@ class GMOM(Estimator):
     def __init__(self, X, y, loss, n_classes, fit_intercept, n_samples_in_block):
         super().__init__(X, y, loss, n_classes, fit_intercept)
         self.n_samples_in_block = n_samples_in_block
+        if n_samples_in_block <= 0:
+            raise ValueError
         self.n_blocks = self.n_samples // n_samples_in_block
         self.last_block_size = self.n_samples % n_samples_in_block
         if self.last_block_size > 0:
