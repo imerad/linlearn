@@ -410,8 +410,9 @@ class Dataset:
 
             assert self.label_column not in (self.continuous_columns + self.categorical_columns)
 
-            max_Sigma_X = np.max(np.linalg.eigh(df_train[self.continuous_columns].cov())[0])
             n_cnt_features = len(self.continuous_columns)
+            if n_cnt_features > 0:
+                max_Sigma_X = np.max(np.linalg.eigh(df_train[self.continuous_columns].cov())[0])
             # for cnt_col in cnt_cols:
             #     # print("corrupting column : %s"%cnt_col)
             #     minmax = (df_train[cnt_col].min(), df_train[cnt_col].max())
