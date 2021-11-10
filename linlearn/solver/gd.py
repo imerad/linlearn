@@ -61,6 +61,15 @@ class GD(Solver):
         penalize = self.penalty.apply_one_unscaled_factory()
         step = self.step
 
+        if self.estimator == "llm":
+            @jit(**jit_kwargs)
+            def step_scaler(state):
+                return 1 / np.sqrt(1 + state.n_grad_calls)
+        else:
+            @jit(**jit_kwargs)
+            def step_scaler(state):
+                return 1
+
         # The learning rates scaled by the strength of the penalization (we use the
         # apply_one_unscaled penalization function)
         scaled_step = self.penalty.strength * self.step
@@ -82,8 +91,10 @@ class GD(Solver):
                 grad_estim_sc_prods = grad_estimator(inner_products, state_estimator)
                 grad = state_estimator.gradient
                 # TODO : allocate w_new somewhere ?
-                w_new = weights - step * grad
 
+                w_new = weights - step * step_scaler(state_estimator) * grad
+
+                scaled_step2 = scaled_step * step_scaler(state_estimator)
                 for k in range(n_classes):
                     abs_delta_j = fabs(w_new[0, k] - weights[0, k])
                     if abs_delta_j > max_abs_delta:
@@ -96,7 +107,7 @@ class GD(Solver):
                     weights[0, k] = w_new[0, k]
                     for j in range(n_features):
 
-                        w_new[j + 1, k] = penalize(w_new[j + 1, k], scaled_step)
+                        w_new[j + 1, k] = penalize(w_new[j + 1, k], scaled_step2)
                         # Update the maximum update change
                         abs_delta_j = fabs(w_new[j + 1, k] - weights[j + 1, k])
                         if abs_delta_j > max_abs_delta:
@@ -123,12 +134,13 @@ class GD(Solver):
                 grad_estim_sc_prods = grad_estimator(inner_products, state_estimator)
                 grad = state_estimator.gradient
                 # TODO : allocate w_new somewhere ?
-                w_new = weights - step * grad
+                w_new = weights - step * step_scaler(state_estimator) * grad
 
+                scaled_step2 = scaled_step * step_scaler(state_estimator)
                 for k in range(n_classes):
                     for j in range(n_features):
 
-                        w_new[j, k] = penalize(w_new[j, k], scaled_step)
+                        w_new[j, k] = penalize(w_new[j, k], scaled_step2)
                         # Update the maximum update change
                         abs_delta_j = fabs(w_new[j, k] - weights[j, k])
                         if abs_delta_j > max_abs_delta:

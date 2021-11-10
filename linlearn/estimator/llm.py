@@ -44,6 +44,8 @@ StateLLM = namedtuple(
         "gradient",
         "loss_derivative",
         "partial_derivative",
+        "n_grad_calls",
+        "n_pderiv_calls",
     ],
 )
 
@@ -72,6 +74,8 @@ class LLM(Estimator):
             ),
             loss_derivative=np.empty(self.n_classes, dtype=np_float),
             partial_derivative=np.empty(self.n_classes, dtype=np_float),
+            n_grad_calls=0,
+            n_pderiv_calls=0,
         )
 
     def partial_deriv_factory(self):
@@ -89,6 +93,8 @@ class LLM(Estimator):
             @jit(**jit_kwargs)
             def partial_deriv(j, inner_products, state):
                 sample_indices = state.sample_indices
+                n_calls = state.n_pderiv_calls
+                n_calls += 1
                 block_means = state.block_means
 
                 np.random.shuffle(sample_indices)
@@ -135,6 +141,8 @@ class LLM(Estimator):
             @jit(**jit_kwargs)
             def partial_deriv(j, inner_products, state):
                 sample_indices = state.sample_indices
+                n_calls = state.n_pderiv_calls
+                n_calls += 1
                 block_means = state.block_means
 
                 np.random.shuffle(sample_indices)
@@ -183,6 +191,8 @@ class LLM(Estimator):
             @jit(**jit_kwargs)
             def grad(inner_products, state):
                 sample_indices = state.sample_indices
+                n_calls = state.n_grad_calls
+                n_calls += 1
                 block_means = state.block_means
                 gradient = state.gradient
                 # for i in range(n_samples):
@@ -229,6 +239,8 @@ class LLM(Estimator):
             @jit(**jit_kwargs)
             def grad(inner_products, state):
                 sample_indices = state.sample_indices
+                n_calls = state.n_grad_calls
+                n_calls += 1
                 block_means = state.block_means
                 gradient = state.gradient
                 # for i in range(n_samples):

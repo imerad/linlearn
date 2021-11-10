@@ -304,7 +304,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
     # TODO: properties for class_weight=None, random_state=None, verbose=0, warm_start=False, n_jobs=None
 
     def check_estimator_solver_combination(self, estimator, solver):
-        if solver in ["sgd", "svrg", "saga"] and estimator != "erm":
+        if solver in ["sgd", "svrg", "saga", "batch_gd"] and estimator != "erm":
             warn(
                 "Your choice of robust estimator will be ignored because it is not supported by SGD type solvers (SGD, SVRG and SAGA)"
             )
