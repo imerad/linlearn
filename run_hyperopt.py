@@ -696,7 +696,7 @@ if __name__ == "__main__":
     parser.add_argument("--n_tuned_runs", type=int, default=5)
     parser.add_argument("-o", "--output_folder_path", default=None)
     parser.add_argument("--random_state_seed", type=int, default=42)
-    parser.add_argument("--corruption_rate", type=float, default=0.1)
+    parser.add_argument("--corruption_rate", type=float, default=0.0)
 
     args = parser.parse_args()
 
