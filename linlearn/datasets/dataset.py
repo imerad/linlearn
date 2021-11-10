@@ -401,17 +401,56 @@ class Dataset:
             rng = np.random.RandomState(random_state)
             n_samples_train = len(df_train)
             corrupted_indices = rng.choice(df_train.index, size=int(corruption_rate * n_samples_train), replace=False)
+            cnt_cols = self.continuous_columns
+            cat_cols = self.categorical_columns
+            if self.task == "regression":
+                cnt_cols = cnt_cols + [self.label_column]
+            else:
+                cat_cols = cat_cols + [self.label_column]
 
-            for cnt_col in self.continuous_columns:
-                # print("corrupting column : %s"%cnt_col)
-                minmax = (df_train[cnt_col].min(), df_train[cnt_col].max())
-                range = minmax[1] - minmax[0]
-                for i in corrupted_indices:
-                    updown = rng.randint(2)
-                    sign = 2*updown-1
-                    df_train.loc[i, cnt_col] = minmax[updown] + sign * (10 + 5 * rng.rand()) * range
+            assert self.label_column not in (self.continuous_columns + self.categorical_columns)
 
-            for cat_col in self.categorical_columns + [self.label_column]:
+            max_Sigma_X = np.sqrt(np.max(np.linalg.eigh(df_train[self.continuous_columns].cov())[0]))
+            n_cnt_features = len(self.continuous_columns)
+            # for cnt_col in cnt_cols:
+            #     # print("corrupting column : %s"%cnt_col)
+            #     minmax = (df_train[cnt_col].min(), df_train[cnt_col].max())
+            #     range = minmax[1] - minmax[0]
+            #     for i in corrupted_indices:
+            #         updown = rng.randint(2)
+            #         sign = 2*updown-1
+            #         df_train.loc[i, cnt_col] = minmax[updown] + sign * (10 + 5 * rng.rand()) * range
+            for i in corrupted_indices:
+                type = rng.randint(6)
+                dir = rng.randn(n_cnt_features)
+                dir /= np.sqrt((dir * dir).sum())  # random direction
+                if type == 0:
+                    for cnt_col in cnt_cols:
+                        df_train.loc[i, cnt_col] = max_Sigma_X
+
+                elif type == 1:
+                    corrupt = 2 * max_Sigma_X * dir + rng.randn(n_cnt_features)
+                    for j, cnt_col in enumerate(cnt_cols):
+                        df_train.loc[i, cnt_col] = corrupt[j]
+
+                elif type == 2:
+                    for cnt_col in cnt_cols:
+                        df_train.loc[i, cnt_col] = max_Sigma_X
+
+                elif type == 3:
+                    for cnt_col in cnt_cols:
+                        df_train.loc[i, cnt_col] = 1
+                elif type == 4:
+                    corrupt = 10 * max_Sigma_X * dir + rng.randn(n_cnt_features)
+                    for j, cnt_col in enumerate(cnt_cols):
+                        df_train.loc[i, cnt_col] = corrupt[j]
+                elif type == 5:
+                    corrupt = rng.randn(n_cnt_features)
+                    corrupt = 10 * max_Sigma_X * corrupt / np.linalg.norm(corrupt)
+                    for j, cnt_col in enumerate(cnt_cols):
+                        df_train.loc[i, cnt_col] = corrupt[j]
+
+            for cat_col in cat_cols:
                 # print("corrupting column : %s"%cat_col)
                 dist = df_train[cat_col].value_counts(normalize=True).apply(lambda x: 1/max(1e-8, x))
                 dist = dist.apply(lambda x: x/dist.sum())
