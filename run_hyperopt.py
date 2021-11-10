@@ -414,9 +414,9 @@ def run_hyperopt(
         col_it_mse, col_it_mse_train, col_it_mae, col_it_mae_train = [], [], [], []
         col_fin_mse, col_fin_mse_train, col_fin_mae, col_fin_mae_train = [], [], [], []
 
-    train_perc = 0.8
-    val_perc = 0.1
-    test_perc = 0.1
+    train_perc = 0.7
+    val_perc = 0.15
+    test_perc = 0.15
     assert train_perc + val_perc + test_perc == 1.0
 
     if dataset.name == "internet":
@@ -450,23 +450,27 @@ def run_hyperopt(
         results_dataset_path,
     )
 
-    print("Run train-val hyperopt exp...")
-    tuned_cv_result, best_param = exp.optimize_params(
-        X_train,
-        y_train,
-        X_val,
-        y_val,
-        max_evals=max_hyperopt_eval,
-        verbose=True,
-    )
-    print("\nThe best found params were : %r\n" % best_param)
+    if max_hyperopt_eval > 0:
+        print("Run train-val hyperopt exp...")
+        tuned_cv_result, best_param = exp.optimize_params(
+            X_train,
+            y_train,
+            X_val,
+            y_val,
+            max_evals=max_hyperopt_eval,
+            verbose=True,
+        )
+        print("\nThe best found params were : %r\n" % best_param)
+    else:
+        print("NO PARAMETER FINETUNING")
+        best_param = exp.default_params
 
     print("Run fitting with tuned params...")
 
     for fit_seed in fit_seeds:
         # tic = time()
         model = exp.fit(
-            tuned_cv_result["params"],
+            best_param,
             X_train,
             y_train,
             seed=fit_seed,
@@ -689,6 +693,7 @@ if __name__ == "__main__":
         ],
     )
     parser.add_argument("-n", "--hyperopt_evals", type=int, default=50)
+    parser.add_argument("--n_tuned_runs", type=int, default=5)
     parser.add_argument("-o", "--output_folder_path", default=None)
     parser.add_argument("--random_state_seed", type=int, default=42)
     parser.add_argument("--corruption_rate", type=float, default=0.1)
@@ -699,6 +704,7 @@ if __name__ == "__main__":
 
     learner_name = args.learner_name
     max_hyperopt_eval = args.hyperopt_evals
+    n_tuned_runs = args.n_tuned_runs
     dataset_name = args.dataset_name.lower()
     loader = set_dataloader(dataset_name)
     random_state_seed = args.random_state_seed
@@ -716,7 +722,7 @@ if __name__ == "__main__":
         "train_val_split_random_state": 1 + random_state_seed,
         "expe_random_state": 2 + random_state_seed,
     }
-    fit_seeds = [0, 1, 2, 3, 4]
+    fit_seeds = list(range(n_tuned_runs))#[0, 1, 2, 3, 4]
 
     logging.info("=" * 128)
     dataset = loader()

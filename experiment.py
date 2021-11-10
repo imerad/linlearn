@@ -32,8 +32,8 @@ min_tmean_percentage = 0.001
 default_tmean_percentage = 0.01
 max_tmean_percentage = 0.3
 
-min_C_reg = np.log(1e-4)
-max_C_reg = np.log(1e4)
+# min_C_reg = np.log(1e-4)
+# max_C_reg = np.log(1e4)
 
 
 class Experiment(object):
@@ -267,7 +267,7 @@ class MOM_CGD_Experiment(Experiment):
         self.space = {
             "block_size": hp.uniform("block_size", min_mom_block_size, max_mom_block_size),
             "cgd_IS": hp.choice("cgd_IS", [True, False]),
-            "C": hp.loguniform("C", min_C_reg, max_C_reg),
+            # "C": hp.loguniform("C", min_C_reg, max_C_reg),
         }
         # hard-coded default params here
         self.default_params = {"block_size": default_mom_block_size, "cgd_IS": False}
@@ -304,7 +304,7 @@ class ERM_GD_Experiment(Experiment):
 
         # hard-coded params search space here
         self.space = {
-            "C": hp.loguniform("C", min_C_reg, max_C_reg),
+            # "C": hp.loguniform("C", min_C_reg, max_C_reg),
         }
         # hard-coded default params here
         self.default_params = {"C": 1}
@@ -343,7 +343,7 @@ class TMEAN_CGD_Experiment(Experiment):
         self.space = {
             "percentage": hp.uniform("percentage", min_tmean_percentage, max_tmean_percentage),
             "cgd_IS": hp.choice("cgd_IS", [True, False]),
-            "C": hp.loguniform("C", min_C_reg, max_C_reg),
+            # "C": hp.loguniform("C", min_C_reg, max_C_reg),
         }
         # hard-coded default params here
         self.default_params = {"percentage": default_tmean_percentage, "cgd_IS": False}
@@ -380,8 +380,8 @@ class CH_GD_Experiment(Experiment):
 
         # hard-coded params search space here
         self.space = {
-            "eps": hp.loguniform("eps", -10, -1),
-            "C": hp.loguniform("C", min_C_reg, max_C_reg),
+            "eps": hp.loguniform("eps", -10, 0),
+            # "C": hp.loguniform("C", min_C_reg, max_C_reg),
         }
         # hard-coded default params here
         self.default_params = {"eps": 0.001}
@@ -418,9 +418,9 @@ class CH_CGD_Experiment(Experiment):
 
         # hard-coded params search space here
         self.space = {
-            "eps": hp.loguniform("eps", -10, -1),
+            "eps": hp.loguniform("eps", -10, 0),
             "cgd_IS": hp.choice("cgd_IS", [True, False]),
-            "C": hp.loguniform("C", min_C_reg, max_C_reg),
+            # "C": hp.loguniform("C", min_C_reg, max_C_reg),
         }
         # hard-coded default params here
         self.default_params = {"eps": 0.001, "cgd_IS" : False}
@@ -458,7 +458,7 @@ class LLM_GD_Experiment(Experiment):
         # hard-coded params search space here
         self.space = {
             "block_size": hp.uniform("block_size", min_mom_block_size, max_mom_block_size),
-            "C": hp.loguniform("C", min_C_reg, max_C_reg),
+            # "C": hp.loguniform("C", min_C_reg, max_C_reg),
         }
         # hard-coded default params here
         self.default_params = {"block_size": default_mom_block_size}
@@ -497,7 +497,7 @@ class GMOM_GD_Experiment(Experiment):
         # hard-coded params search space here
         self.space = {
             "block_size" : hp.uniform("block_size", min_mom_block_size, max_mom_block_size),
-            "C": hp.loguniform("C", min_C_reg, max_C_reg),
+            # "C": hp.loguniform("C", min_C_reg, max_C_reg),
         }
         # hard-coded default params here
         self.default_params = {"block_size": default_mom_block_size}
