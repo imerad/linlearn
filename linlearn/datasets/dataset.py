@@ -413,43 +413,43 @@ class Dataset:
             n_cnt_features = len(self.continuous_columns)
             if n_cnt_features > 0:
                 max_Sigma_X = np.max(np.linalg.eigh(df_train[self.continuous_columns].cov())[0])
-            # for cnt_col in cnt_cols:
-            #     # print("corrupting column : %s"%cnt_col)
-            #     minmax = (df_train[cnt_col].min(), df_train[cnt_col].max())
-            #     range = minmax[1] - minmax[0]
-            #     for i in corrupted_indices:
-            #         updown = rng.randint(2)
-            #         sign = 2*updown-1
-            #         df_train.loc[i, cnt_col] = minmax[updown] + sign * (10 + 5 * rng.rand()) * range
-            for i in corrupted_indices:
-                type = rng.randint(6)
-                dir = rng.randn(n_cnt_features)
-                dir /= np.sqrt((dir * dir).sum())  # random direction
-                if type == 0:
-                    for cnt_col in cnt_cols:
-                        df_train.loc[i, cnt_col] = max_Sigma_X
+                # for cnt_col in cnt_cols:
+                #     # print("corrupting column : %s"%cnt_col)
+                #     minmax = (df_train[cnt_col].min(), df_train[cnt_col].max())
+                #     range = minmax[1] - minmax[0]
+                #     for i in corrupted_indices:
+                #         updown = rng.randint(2)
+                #         sign = 2*updown-1
+                #         df_train.loc[i, cnt_col] = minmax[updown] + sign * (10 + 5 * rng.rand()) * range
+                for i in corrupted_indices:
+                    type = rng.randint(6)
+                    dir = rng.randn(n_cnt_features)
+                    dir /= np.sqrt((dir * dir).sum())  # random direction
+                    if type == 0:
+                        for cnt_col in cnt_cols:
+                            df_train.loc[i, cnt_col] = max_Sigma_X
 
-                elif type == 1:
-                    corrupt = 2 * max_Sigma_X * dir + rng.randn(n_cnt_features)
-                    for j, cnt_col in enumerate(cnt_cols):
-                        df_train.loc[i, cnt_col] = corrupt[j]
+                    elif type == 1:
+                        corrupt = 2 * max_Sigma_X * dir + rng.randn(n_cnt_features)
+                        for j, cnt_col in enumerate(cnt_cols):
+                            df_train.loc[i, cnt_col] = corrupt[j]
 
-                elif type == 2:
-                    for cnt_col in cnt_cols:
-                        df_train.loc[i, cnt_col] = max_Sigma_X
+                    elif type == 2:
+                        for cnt_col in cnt_cols:
+                            df_train.loc[i, cnt_col] = max_Sigma_X
 
-                elif type == 3:
-                    for cnt_col in cnt_cols:
-                        df_train.loc[i, cnt_col] = 1
-                elif type == 4:
-                    corrupt = 10 * max_Sigma_X * dir + rng.randn(n_cnt_features)
-                    for j, cnt_col in enumerate(cnt_cols):
-                        df_train.loc[i, cnt_col] = corrupt[j]
-                elif type == 5:
-                    corrupt = rng.randn(n_cnt_features)
-                    corrupt = 10 * max_Sigma_X * corrupt / np.linalg.norm(corrupt)
-                    for j, cnt_col in enumerate(cnt_cols):
-                        df_train.loc[i, cnt_col] = corrupt[j]
+                    elif type == 3:
+                        for cnt_col in cnt_cols:
+                            df_train.loc[i, cnt_col] = 1
+                    elif type == 4:
+                        corrupt = 10 * max_Sigma_X * dir + rng.randn(n_cnt_features)
+                        for j, cnt_col in enumerate(cnt_cols):
+                            df_train.loc[i, cnt_col] = corrupt[j]
+                    elif type == 5:
+                        corrupt = rng.randn(n_cnt_features)
+                        corrupt = 10 * max_Sigma_X * corrupt / np.linalg.norm(corrupt)
+                        for j, cnt_col in enumerate(cnt_cols):
+                            df_train.loc[i, cnt_col] = corrupt[j]
 
             for cat_col in cat_cols:
                 # print("corrupting column : %s"%cat_col)
