@@ -18,6 +18,8 @@ from sklearn.metrics import (
 )
 from sklearn.preprocessing import LabelBinarizer
 
+from sklearn.linear_model import HuberRegressor, RANSACRegressor, LinearRegression
+from scipy.optimize import minimize
 from linlearn import Classifier, Regressor
 sys.path.extend([".", ".."])
 
@@ -32,8 +34,8 @@ min_tmean_percentage = 0.001
 default_tmean_percentage = 0.01
 max_tmean_percentage = 0.3
 
-min_C_reg = np.log(1e-4)
-max_C_reg = np.log(1e4)
+# min_C_reg = np.log(1e-4)
+# max_C_reg = np.log(1e4)
 
 
 class Experiment(object):
@@ -267,7 +269,7 @@ class MOM_CGD_Experiment(Experiment):
         self.space = {
             "block_size": hp.uniform("block_size", min_mom_block_size, max_mom_block_size),
             "cgd_IS": hp.choice("cgd_IS", [True, False]),
-            "C": hp.loguniform("C", min_C_reg, max_C_reg),
+            # "C": hp.loguniform("C", min_C_reg, max_C_reg),
         }
         # hard-coded default params here
         self.default_params = {"block_size": default_mom_block_size, "cgd_IS": False}
@@ -304,7 +306,7 @@ class ERM_GD_Experiment(Experiment):
 
         # hard-coded params search space here
         self.space = {
-            "C": hp.loguniform("C", min_C_reg, max_C_reg),
+            # "C": hp.loguniform("C", min_C_reg, max_C_reg),
         }
         # hard-coded default params here
         self.default_params = {"C": 1}
@@ -343,7 +345,7 @@ class TMEAN_CGD_Experiment(Experiment):
         self.space = {
             "percentage": hp.uniform("percentage", min_tmean_percentage, max_tmean_percentage),
             "cgd_IS": hp.choice("cgd_IS", [True, False]),
-            "C": hp.loguniform("C", min_C_reg, max_C_reg),
+            # "C": hp.loguniform("C", min_C_reg, max_C_reg),
         }
         # hard-coded default params here
         self.default_params = {"percentage": default_tmean_percentage, "cgd_IS": False}
@@ -381,7 +383,7 @@ class CH_GD_Experiment(Experiment):
         # hard-coded params search space here
         self.space = {
             "eps": hp.loguniform("eps", -10, 0),
-            "C": hp.loguniform("C", min_C_reg, max_C_reg),
+            # "C": hp.loguniform("C", min_C_reg, max_C_reg),
         }
         # hard-coded default params here
         self.default_params = {"eps": 0.001}
@@ -420,7 +422,7 @@ class CH_CGD_Experiment(Experiment):
         self.space = {
             "eps": hp.loguniform("eps", -10, 0),
             "cgd_IS": hp.choice("cgd_IS", [True, False]),
-            "C": hp.loguniform("C", min_C_reg, max_C_reg),
+            # "C": hp.loguniform("C", min_C_reg, max_C_reg),
         }
         # hard-coded default params here
         self.default_params = {"eps": 0.001, "cgd_IS" : False}
@@ -458,7 +460,7 @@ class LLM_GD_Experiment(Experiment):
         # hard-coded params search space here
         self.space = {
             "block_size": hp.uniform("block_size", min_mom_block_size, max_mom_block_size),
-            "C": hp.loguniform("C", min_C_reg, max_C_reg),
+            # "C": hp.loguniform("C", min_C_reg, max_C_reg),
         }
         # hard-coded default params here
         self.default_params = {"block_size": default_mom_block_size}
@@ -497,7 +499,7 @@ class GMOM_GD_Experiment(Experiment):
         # hard-coded params search space here
         self.space = {
             "block_size" : hp.uniform("block_size", min_mom_block_size, max_mom_block_size),
-            "C": hp.loguniform("C", min_C_reg, max_C_reg),
+            # "C": hp.loguniform("C", min_C_reg, max_C_reg),
         }
         # hard-coded default params here
         self.default_params = {"block_size": default_mom_block_size}
@@ -515,78 +517,67 @@ class GMOM_GD_Experiment(Experiment):
         )
         return params_
 
-# class RANSAC_Experiment(Experiment):
-#
-#     def __init__(
-#         self,
-#         learning_task,
-#         max_hyperopt_evals=50,
-#         random_state=0,
-#         output_folder_path="./",
-#     ):
-#         Experiment.__init__(
-#             self,
-#             learning_task,
-#             max_hyperopt_evals,
-#             random_state,
-#             output_folder_path,
-#         )
-#         if learning_task != "regression":
-#             raise ValueError("RANSAC is only used for regression")
-#
-#         # hard-coded params search space here
-#         self.space = {
-#             "block_size" : hp.uniform("block_size", min_mom_block_size, max_mom_block_size),
-#             # "C": hp.loguniform("C", min_C_reg, max_C_reg),
-#         }
-#         # hard-coded default params here
-#         self.default_params = {"block_size": default_mom_block_size}
-#         self.default_params = self.preprocess_params(self.default_params)
-#         self.title = "ransac"
-#
-#         def fit(
-#                 self,
-#                 params,
-#                 X_train,
-#                 y_train,
-#                 seed=None,
-#         ):
-#             #  X_val, y_val not used since no early stopping
-#             if seed is not None:
-#                 params.update({"random_state": seed})
-#
-#             if self.learning_task.endswith("classification"):
-#                 learner = Classifier(**params, n_jobs=-1)
-#             else:
-#                 learner = Regressor(**params, n_jobs=-1)
-#
-#             learner.fit(X_train, y_train, dummy_first_step=True)
-#             return learner
-#
-#         def predict(self, bst, X_test):
-#             if self.learning_task.endswith("classification"):
-#                 preds = bst.predict_proba(X_test)
-#             else:
-#                 preds = bst.predict(X_test)
-#             return preds
-#
-#     def preprocess_params(self, params):
-#         params_ = params.copy()
-#         params_.update(
-#             {
-#                 "estimator": "gmom",
-#                 "solver": "gd",
-#                 "random_state": self.random_state,
-#             }
-#         )
-#         return params_
-#
-# def RANSAC(X, y, eps):
-#
-#     reg = RANSACRegressor(base_estimator=LinearRegression(fit_intercept=False), min_samples=RANSAC_min_samples)
-#     t0 = time.time()
-#     reg.fit(X, y)
-#     fit_time = time.time() - t0
-#
-#     return reg.estimator_.coef_, fit_time
-#
+class RANSAC_Experiment(Experiment):
+
+    def __init__(
+        self,
+        learning_task,
+        max_hyperopt_evals=50,
+        random_state=0,
+        output_folder_path="./",
+    ):
+        Experiment.__init__(
+            self,
+            learning_task,
+            max_hyperopt_evals,
+            random_state,
+            output_folder_path,
+        )
+        if learning_task != "regression":
+            raise ValueError("RANSAC is only used for regression")
+
+        # hard-coded params search space here
+        self.space = {
+            "block_size" : hp.uniform("block_size", min_mom_block_size, max_mom_block_size),
+            # "C": hp.loguniform("C", min_C_reg, max_C_reg),
+        }
+        # hard-coded default params here
+        self.default_params = {"block_size": default_mom_block_size}
+        self.default_params = self.preprocess_params(self.default_params)
+        self.title = "ransac"
+
+    def fit(
+            self,
+            params,
+            X_train,
+            y_train,
+            seed=None,
+    ):
+        #  X_val, y_val not used since no early stopping
+        if seed is not None:
+            params.update({"random_state": seed})
+
+        reg = RANSACRegressor(**params)
+        t0 = time.time()
+        reg.fit(X_train, y_train)
+        fit_time = time.time() - t0
+
+        return reg
+
+    def predict(self, bst, X_test):
+        if self.learning_task.endswith("classification"):
+            preds = bst.predict_proba(X_test)
+        else:
+            preds = bst.predict(X_test)
+        return preds
+
+    def preprocess_params(self, params):
+        params_ = params.copy()
+        params_.update(
+            {
+                "estimator": "gmom",
+                "solver": "gd",
+                "random_state": self.random_state,
+            }
+        )
+        return params_
