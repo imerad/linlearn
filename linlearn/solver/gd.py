@@ -87,8 +87,9 @@ class GD(Solver):
                 #         inner_products[i, k] = weights[0,k]
                 #         for j in range(n_features):
                 #             inner_products[i, k] += X[i, j] * weights[j+1, k]
-
+                # print("pass1")
                 grad_estim_sc_prods = grad_estimator(inner_products, state_estimator)
+                # print("pass2")
                 grad = state_estimator.gradient
                 # TODO : allocate w_new somewhere ?
 

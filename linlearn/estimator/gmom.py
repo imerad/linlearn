@@ -212,7 +212,7 @@ class GMOM(Estimator):
                             grads_sum_block[j, k] += X[idx, j] * deriv[k]
 
                     if (i != 0) and ((i + 1) % n_samples_in_block == 0):
-                        for j in range(n_features + 1):
+                        for j in range(n_features):
                             for k in range(n_classes):
                                 block_means[counter, j, k] = (
                                     grads_sum_block[j, k] / n_samples_in_block

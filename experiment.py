@@ -525,6 +525,44 @@ class GMOM_GD_Experiment(Experiment):
         )
         return params_
 
+class HuberGrad_Experiment(Experiment):
+
+    def __init__(
+        self,
+        learning_task,
+        max_hyperopt_evals=50,
+        random_state=0,
+        output_folder_path="./",
+    ):
+        Experiment.__init__(
+            self,
+            learning_task,
+            max_hyperopt_evals,
+            random_state,
+            output_folder_path,
+        )
+
+        # hard-coded params search space here
+        self.space = {
+            "percentage": hp.uniform("percentage", min_tmean_percentage, max_tmean_percentage),
+        }
+        # hard-coded default params here
+        self.default_params = {"percentage": default_tmean_percentage}
+        self.default_params = self.preprocess_params(self.default_params)
+        self.title = "hubergrad"
+
+    def preprocess_params(self, params):
+        params_ = params.copy()
+        params_.update(
+            {
+                "estimator": "hg",
+                "solver": "gd",
+                "random_state": self.random_state,
+            }
+        )
+        return params_
+
+
 class RANSAC_Experiment(Experiment):
 
     def __init__(
@@ -643,7 +681,7 @@ class Huber_Experiment(Experiment):
         }
         # hard-coded default params here
         self.default_params = {"epsilon": 1.35, "alpha": 0.0}
-        self.default_params = self.preprocess_params(self.default_params)
+        # self.default_params = self.preprocess_params(self.default_params)
         self.title = "huber"
 
     def fit(
@@ -653,8 +691,8 @@ class Huber_Experiment(Experiment):
             y_train,
             seed=None,
     ):
-        if seed is not None:
-            params.update({"random_state": seed})
+        # if seed is not None:
+        #     params.update({"random_state": seed})
 
         reg = HuberRegressor(**params)
         t0 = time.time()
@@ -662,5 +700,9 @@ class Huber_Experiment(Experiment):
         fit_time = time.time() - t0
 
         return reg, fit_time
+
+    def preprocess_params(self, params):
+        params_ = params.copy()
+        return params_
 
 

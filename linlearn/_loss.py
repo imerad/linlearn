@@ -7,6 +7,7 @@ import numpy as np
 from numba import jit, njit, vectorize, void, prange
 
 from .estimator.ch import holland_catoni_estimator
+from .estimator.hg import alg2
 from ._utils import NOPYTHON, NOGIL, BOUNDSCHECK, FASTMATH, nb_float, fast_median, fast_trimmed_mean, sum_sq, argmedian
 from scipy.special import expit
 
@@ -182,7 +183,7 @@ def compute_steps(X, solver, estimator, fit_intercept, lip_const, percentage=0.0
         step = 1 / (lip_const * max(int_fit_intercept, mean_sq_norms))
         return step
     elif solver in ["gd", "batch_gd"]:
-        if estimator == "erm":
+        if estimator in ["erm", "ch"]:
             cov = X.T @ X
             step = n_samples / (lip_const * max(int_fit_intercept * n_samples, np.linalg.norm(cov, 2)))
             return step
@@ -242,18 +243,18 @@ def compute_steps(X, solver, estimator, fit_intercept, lip_const, percentage=0.0
             step = n_samples_in_block / (lip_const * max(int_fit_intercept * n_samples_in_block, np.linalg.norm(cov, 2)))
             return step
 
-        elif estimator == "ch":
-            if eps == 0.0:
-                raise ValueError("you should provide eps for ch estimator")
-            # square_coords = np.empty(n_samples, dtype=X.dtype)
-            # sum_norms = 0.0
-            # for j in range(n_features):
-            #     square_coords[:] = X[:, j] * X[:, j]
-            #     sum_norms += holland_catoni_estimator(square_coords, eps)
-            square_norms = sum_sq(X, 1)
-            square_norm_average_estimate = holland_catoni_estimator(square_norms, eps)
-            step = 1 / (lip_const * max(int_fit_intercept, square_norm_average_estimate))
-            return step
+        # elif estimator == "ch":
+        #     if eps == 0.0:
+        #         raise ValueError("you should provide eps for ch estimator")
+        #     # square_coords = np.empty(n_samples, dtype=X.dtype)
+        #     # sum_norms = 0.0
+        #     # for j in range(n_features):
+        #     #     square_coords[:] = X[:, j] * X[:, j]
+        #     #     sum_norms += holland_catoni_estimator(square_coords, eps)
+        #     square_norms = sum_sq(X, 1)
+        #     square_norm_average_estimate = holland_catoni_estimator(square_norms, eps)
+        #     step = 1 / (lip_const * max(int_fit_intercept, square_norm_average_estimate))
+        #     return step
         elif estimator == "tmean":
             if percentage == 0.0:
                 raise ValueError("you should provide percentage for tmean estimator")
@@ -264,6 +265,18 @@ def compute_steps(X, solver, estimator, fit_intercept, lip_const, percentage=0.0
             #     sum_norms += fast_trimmed_mean(square_coords, n_samples, percentage)
             square_norms = sum_sq(X, 1)
             square_norm_average_estimate = fast_trimmed_mean(square_norms, n_samples, percentage)
+            step = 1 / (lip_const * max(int_fit_intercept, square_norm_average_estimate))
+            return step
+        elif estimator == "hg":
+            if percentage == 0.0:
+                raise ValueError("you should provide percentage for hg estimator")
+            # square_coords = np.empty(n_samples, dtype=X.dtype)
+            # sum_norms = 0.0
+            # for j in range(n_features):
+            #     square_coords[:] = X[:, j] * X[:, j]
+            #     sum_norms += fast_trimmed_mean(square_coords, n_samples, percentage)
+            square_norms = np.expand_dims(sum_sq(X, 1), axis=1)
+            square_norm_average_estimate = alg2(square_norms, 2*percentage)[0, 0]
             step = 1 / (lip_const * max(int_fit_intercept, square_norm_average_estimate))
             return step
         else:

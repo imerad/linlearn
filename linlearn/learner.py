@@ -32,7 +32,7 @@ from ._loss import (
 )
 from ._penalty import NoPen, L2Sq, L1, ElasticNet
 from .solver import CGD, GD, SGD, SVRG, SAGA, batch_GD, History
-from .estimator import ERM, MOM, TMean, LLM, GMOM, CH
+from .estimator import ERM, MOM, TMean, LLM, GMOM, CH, HG
 from ._utils import NOPYTHON, NOGIL, BOUNDSCHECK, FASTMATH, np_float, numba_seed_numpy
 
 jit_kwargs = {
@@ -56,7 +56,7 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         "multisquaredhinge",
     ]
     _penalties = ["none", "l2", "l1", "elasticnet"]
-    _estimators = ["erm", "mom", "tmean", "llm", "gmom", "ch"]
+    _estimators = ["erm", "mom", "tmean", "llm", "gmom", "ch", "hg"]
     _solvers = ["cgd", "gd", "sgd", "svrg", "saga", "batch_gd"]
 
     def __init__(
@@ -326,9 +326,9 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             warn(
                 "The Trimmed Mean estimator computes only single gradient coordinates, full gradients for GD will be constituted from coordinates."
             )
-        elif solver == "cgd" and estimator == "gmom":
+        elif solver == "cgd" and estimator in ["gmom", "hg"]:
             raise ValueError(
-                "The GMOM estimator computes whole gradients and cannot be used with CGD."
+                "The GMOM and HG estimators compute whole gradients and cannot be used with CGD."
             )
 
     def _get_loss(self):
@@ -371,6 +371,10 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             n_samples_in_block = max(int(self.block_size * n_samples), 1)
             return GMOM(
                 X, y, loss, self.n_classes, self.fit_intercept, n_samples_in_block
+            )
+        elif self.estimator == "hg":
+            return HG(
+                X, y, loss, self.n_classes, self.fit_intercept, eps=self.percentage
             )
         else:
             raise ValueError("Unknown estimator")

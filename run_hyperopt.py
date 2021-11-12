@@ -59,6 +59,10 @@ from experiment import (  # noqa: E402
     LLM_GD_Experiment,
     GMOM_GD_Experiment,
     ERM_GD_Experiment,
+    HuberGrad_Experiment,
+    Huber_Experiment,
+    LAD_Experiment,
+    RANSAC_Experiment,
 )
 
 
@@ -69,51 +73,25 @@ def set_experiment(
     expe_random_states,
     output_folder_path,
 ):
-    experiment_setting = {
-        "MOM_CGD": MOM_CGD_Experiment(
-            learning_task,
-            max_hyperopt_evals=max_hyperopt_eval,
-            random_state=expe_random_states,
-            output_folder_path=output_folder_path,
-        ),
-        "TMEAN_CGD": TMEAN_CGD_Experiment(
-            learning_task,
-            max_hyperopt_evals=max_hyperopt_eval,
-            random_state=expe_random_states,
-            output_folder_path=output_folder_path,
-        ),
-        "CH_CGD": CH_CGD_Experiment(
-            learning_task,
-            max_hyperopt_evals=max_hyperopt_eval,
-            random_state=expe_random_states,
-            output_folder_path=output_folder_path,
-        ),
-        "CH_GD": CH_GD_Experiment(
-            learning_task,
-            max_hyperopt_evals=max_hyperopt_eval,
-            random_state=expe_random_states,
-            output_folder_path=output_folder_path,
-        ),
-        "LLM_GD": LLM_GD_Experiment(
-            learning_task,
-            max_hyperopt_evals=max_hyperopt_eval,
-            random_state=expe_random_states,
-            output_folder_path=output_folder_path,
-        ),
-        "GMOM_GD": GMOM_GD_Experiment(
-            learning_task,
-            max_hyperopt_evals=max_hyperopt_eval,
-            random_state=expe_random_states,
-            output_folder_path=output_folder_path,
-        ),
-        "ERM_GD": ERM_GD_Experiment(
-            learning_task,
-            max_hyperopt_evals=max_hyperopt_eval,
-            random_state=expe_random_states,
-            output_folder_path=output_folder_path,
-        ),
+    experiment_select = {
+        "MOM_CGD": MOM_CGD_Experiment,
+        "TMEAN_CGD": TMEAN_CGD_Experiment,
+        "CH_CGD": CH_CGD_Experiment,
+        "CH_GD": CH_GD_Experiment,
+        "LLM_GD": LLM_GD_Experiment,
+        "GMOM_GD": GMOM_GD_Experiment,
+        "ERM_GD": ERM_GD_Experiment,
+        "HG_GD": HuberGrad_Experiment,
+        "RANSAC": RANSAC_Experiment,
+        "LAD": LAD_Experiment,
+        "HUBER": Huber_Experiment,
     }
-    return experiment_setting[clf_name]
+    return experiment_select[clf_name](
+            learning_task,
+            max_hyperopt_evals=max_hyperopt_eval,
+            random_state=expe_random_states,
+            output_folder_path=output_folder_path,
+        )
 
 
 def set_dataloader(dataset_name):
@@ -313,37 +291,51 @@ def compute_multi_classif_history(model, X_train, y_train, X_test, y_test, seed)
 
 
 def compute_regression_history(model, X_train, y_train, X_test, y_test, seed):
-    total_iter = model.history_.records[0].cursor
-    train_decision_function = decision_function_factory(X_train, model.fit_intercept)
-    test_decision_function = decision_function_factory(X_test, model.fit_intercept)
-    train_inner_prods = np.empty((X_train.shape[0], model.n_classes), dtype=np_float)
-    test_inner_prods = np.empty((X_test.shape[0], model.n_classes), dtype=np_float)
+    if not hasattr(model, "history_"):
+        mse_list = [mean_squared_error(y_test, model.predict(X_test))]
+        mse_train_list = [mean_squared_error(y_train, model.predict(X_train))]
 
-    mse_list, mse_train_list, mae_list, mae_train_list = [], [], [], []
+        mae_list = [mean_absolute_error(y_test, model.predict(X_test))]
+        mae_train_list = [mean_absolute_error(y_train, model.predict(X_train))]
 
-    seed_list, time_list, sc_prods_list, iter_list = [], [], [], []
+        seed_list, time_list, sc_prods_list = [seed], [0], [0]
+        if hasattr(model, "n_iter_"):
+            iter_list = [model.n_iter_]
+        else: # ransac
+            iter_list = [model.n_trials_]
+    else:
 
-    weights_record = model.history_.record_nm("weights").record
-    time_record = model.history_.record_nm("time").record
-    sc_prods_record = model.history_.record_nm("sc_prods").record
+        total_iter = model.history_.records[0].cursor
+        train_decision_function = decision_function_factory(X_train, model.fit_intercept)
+        test_decision_function = decision_function_factory(X_test, model.fit_intercept)
+        train_inner_prods = np.empty((X_train.shape[0], model.n_classes), dtype=np_float)
+        test_inner_prods = np.empty((X_test.shape[0], model.n_classes), dtype=np_float)
 
-    for i in range(total_iter):
-        train_decision_function(weights_record[i], train_inner_prods)
-        test_decision_function(weights_record[i], test_inner_prods)
+        mse_list, mse_train_list, mae_list, mae_train_list = [], [], [], []
 
-        y_scores = test_inner_prods
-        y_scores_train = train_inner_prods
+        seed_list, time_list, sc_prods_list, iter_list = [], [], [], []
 
-        mse_list.append(mean_squared_error(y_test, y_scores))
-        mse_train_list.append(mean_squared_error(y_train, y_scores_train))
+        weights_record = model.history_.record_nm("weights").record
+        time_record = model.history_.record_nm("time").record
+        sc_prods_record = model.history_.record_nm("sc_prods").record
 
-        mae_list.append(mean_absolute_error(y_test, y_scores))
-        mae_train_list.append(mean_absolute_error(y_train, y_scores_train))
+        for i in range(total_iter):
+            train_decision_function(weights_record[i], train_inner_prods)
+            test_decision_function(weights_record[i], test_inner_prods)
 
-        seed_list.append(seed)
-        time_list.append(time_record[i] - time_record[0])
-        sc_prods_list.append(sc_prods_record[i])
-        iter_list.append(i)
+            y_scores = test_inner_prods
+            y_scores_train = train_inner_prods
+
+            mse_list.append(mean_squared_error(y_test, y_scores))
+            mse_train_list.append(mean_squared_error(y_train, y_scores_train))
+
+            mae_list.append(mean_absolute_error(y_test, y_scores))
+            mae_train_list.append(mean_absolute_error(y_train, y_scores_train))
+
+            seed_list.append(seed)
+            time_list.append(time_record[i] - time_record[0])
+            sc_prods_list.append(sc_prods_record[i])
+            iter_list.append(i)
 
     return (
         seed_list,
@@ -462,21 +454,20 @@ def run_hyperopt(
         )
         print("\nThe best found params were : %r\n" % best_param)
     else:
-        print("NO PARAMETER FINETUNING")
+        print("NO PARAMETER FINETUNING, using only default params")
         best_param = exp.default_params
 
     print("Run fitting with tuned params...")
 
     for fit_seed in fit_seeds:
         # tic = time()
-        model = exp.fit(
+        model, fit_time = exp.fit(
             best_param,
             X_train,
             y_train,
             seed=fit_seed,
         )
         # toc = time()
-        fit_time = model.fit_time()  #
         logging.info("Fitted %s in %.2f seconds" % (learner_name, fit_time))
 
         if classification:
@@ -665,6 +656,10 @@ if __name__ == "__main__":
             "LLM_GD",
             "GMOM_GD",
             "ERM_GD",
+            "HG_GD",
+            "RANSAC",
+            "LAD",
+            "HUBER",
         ],
     )
     parser.add_argument(
