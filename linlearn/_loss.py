@@ -183,7 +183,7 @@ def compute_steps(X, solver, estimator, fit_intercept, lip_const, percentage=0.0
         step = 1 / (lip_const * max(int_fit_intercept, mean_sq_norms))
         return step
     elif solver in ["gd", "batch_gd"]:
-        if estimator in ["erm", "ch"]:
+        if estimator == "erm":
             cov = X.T @ X
             step = n_samples / (lip_const * max(int_fit_intercept * n_samples, np.linalg.norm(cov, 2)))
             return step
@@ -204,7 +204,7 @@ def compute_steps(X, solver, estimator, fit_intercept, lip_const, percentage=0.0
             step = 1 / (lip_const * max(int_fit_intercept, sum_norms))
             return step
 
-        elif estimator in ["gmom", "llm"]:
+        elif estimator in ["gmom", "llm", "ch"]:
             if n_blocks == 0:
                 raise ValueError(
                     "You should provide n_blocks for mom/gmom/llm estimator"
