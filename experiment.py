@@ -18,7 +18,7 @@ from sklearn.metrics import (
 )
 from sklearn.preprocessing import LabelBinarizer
 
-from sklearn.linear_model import HuberRegressor, RANSACRegressor, LinearRegression
+from sklearn.linear_model import HuberRegressor, RANSACRegressor, LinearRegression, SGDRegressor
 from scipy.optimize import minimize
 from linlearn import Classifier, Regressor
 sys.path.extend([".", ".."])
@@ -138,10 +138,10 @@ class Experiment(object):
         params = params or self.default_params
         params = self.preprocess_params(params)
         # start_time = time.time()
-        bst = self.fit(
+        bst, fit_time = self.fit(
             params, X_train, y_train, seed=None
         )
-        fit_time = bst.fit_time()#time.time() - start_time
+        #time.time() - start_time
         y_scores = self.predict(bst, X_val)
         if self.learning_task.endswith("classification"):
             evals_result = log_loss(y_val, y_scores)
@@ -225,7 +225,6 @@ class Experiment(object):
         y_train,
         seed=None,
     ):
-        #  X_val, y_val not used since no early stopping
         if seed is not None:
             params.update({"random_state": seed})
 
@@ -235,7 +234,7 @@ class Experiment(object):
             learner = Regressor(**params, n_jobs=-1)
 
         learner.fit(X_train, y_train, dummy_first_step=True)
-        return learner
+        return learner, learner.fit_time()
 
     def predict(self, bst, X_test):
         if self.learning_task.endswith("classification"):
@@ -244,8 +243,17 @@ class Experiment(object):
             preds = bst.predict(X_test)
         return preds
 
+    # def preprocess_params(self, params):
+    #     raise NotImplementedError("Method preprocess_params is not implemented.")
+
     def preprocess_params(self, params):
-        raise NotImplementedError("Method preprocess_params is not implemented.")
+        params_ = params.copy()
+        params_.update(
+            {
+                "random_state": self.random_state,
+            }
+        )
+        return params_
 
 
 class MOM_CGD_Experiment(Experiment):
@@ -538,11 +546,10 @@ class RANSAC_Experiment(Experiment):
 
         # hard-coded params search space here
         self.space = {
-            "block_size" : hp.uniform("block_size", min_mom_block_size, max_mom_block_size),
-            # "C": hp.loguniform("C", min_C_reg, max_C_reg),
+            "min_samples": 2 + hp.randint("min_samples", 7)
         }
         # hard-coded default params here
-        self.default_params = {"block_size": default_mom_block_size}
+        self.default_params = {"min_samples": 5}
         self.default_params = self.preprocess_params(self.default_params)
         self.title = "ransac"
 
@@ -562,22 +569,98 @@ class RANSAC_Experiment(Experiment):
         reg.fit(X_train, y_train)
         fit_time = time.time() - t0
 
-        return reg
+        return reg, fit_time
 
-    def predict(self, bst, X_test):
-        if self.learning_task.endswith("classification"):
-            preds = bst.predict_proba(X_test)
-        else:
-            preds = bst.predict(X_test)
-        return preds
+class LAD_Experiment(Experiment):
 
-    def preprocess_params(self, params):
-        params_ = params.copy()
-        params_.update(
-            {
-                "estimator": "gmom",
-                "solver": "gd",
-                "random_state": self.random_state,
-            }
+    def __init__(
+        self,
+        learning_task,
+        max_hyperopt_evals=50,
+        random_state=0,
+        output_folder_path="./",
+    ):
+        Experiment.__init__(
+            self,
+            learning_task,
+            max_hyperopt_evals,
+            random_state,
+            output_folder_path,
         )
-        return params_
+        if learning_task != "regression":
+            raise ValueError("LAD is only used for regression")
+
+        # hard-coded params search space here
+        self.space = {
+            # "C": hp.loguniform("C", min_C_reg, max_C_reg),
+        }
+        # hard-coded default params here
+        self.default_params = {"loss": "epsilon_insensitive", "epsilon": 0.0, "alpha": 0.0}
+        self.default_params = self.preprocess_params(self.default_params)
+        self.title = "lad"
+
+    def fit(
+            self,
+            params,
+            X_train,
+            y_train,
+            seed=None,
+    ):
+        if seed is not None:
+            params.update({"random_state": seed})
+
+        reg = SGDRegressor(**params)
+        t0 = time.time()
+        reg.fit(X_train, y_train)
+        fit_time = time.time() - t0
+
+        return reg, fit_time
+
+
+class Huber_Experiment(Experiment):
+
+    def __init__(
+        self,
+        learning_task,
+        max_hyperopt_evals=50,
+        random_state=0,
+        output_folder_path="./",
+    ):
+        Experiment.__init__(
+            self,
+            learning_task,
+            max_hyperopt_evals,
+            random_state,
+            output_folder_path,
+        )
+        if learning_task != "regression":
+            raise ValueError("Huber is only used for regression")
+
+        # hard-coded params search space here
+        self.space = {
+            "epsilon": hp.uniform("epsilon", 1.0, 2.5)
+            # "C": hp.loguniform("C", min_C_reg, max_C_reg),
+        }
+        # hard-coded default params here
+        self.default_params = {"epsilon": 1.35, "alpha": 0.0}
+        self.default_params = self.preprocess_params(self.default_params)
+        self.title = "huber"
+
+    def fit(
+            self,
+            params,
+            X_train,
+            y_train,
+            seed=None,
+    ):
+        if seed is not None:
+            params.update({"random_state": seed})
+
+        reg = HuberRegressor(**params)
+        t0 = time.time()
+        reg.fit(X_train, y_train)
+        fit_time = time.time() - t0
+
+        return reg, fit_time
+
+
