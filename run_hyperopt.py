@@ -21,7 +21,8 @@ from sklearn.metrics import (
     mean_squared_error,
     mean_absolute_error,
 )
-from sklearn.preprocessing import LabelBinarizer
+from sklearn.preprocessing import LabelBinarizer, StandardScaler
+
 from scipy.special import expit, softmax
 
 sys.path.extend([".", ".."])
@@ -435,6 +436,13 @@ def run_hyperopt(
         X_train = np.nan_to_num(X_train)
         X_val = np.nan_to_num(X_val)
         X_test = np.nan_to_num(X_test)
+
+    if dataset.name == "internet":
+        std_scaler = StandardScaler()
+        X_train = std_scaler.fit_transform(X_train)
+        X_val = std_scaler.transform(X_val)
+        X_test = std_scaler.transform(X_test)
+
 
     exp = set_experiment(
         learner_name,
