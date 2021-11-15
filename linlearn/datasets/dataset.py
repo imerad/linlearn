@@ -401,8 +401,8 @@ class Dataset:
             rng = np.random.RandomState(random_state)
             n_samples_train = len(df_train)
             corrupted_indices = rng.choice(df_train.index, size=int(corruption_rate * n_samples_train), replace=False)
-            cnt_cols = self.continuous_columns
-            cat_cols = self.categorical_columns
+            cnt_cols = self.continuous_columns or []
+            cat_cols = self.categorical_columns or []
             if self.task == "regression":
                 cnt_cols = cnt_cols + [self.label_column]
             else:
