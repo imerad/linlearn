@@ -32,6 +32,8 @@ def SSI(samples, subset_cardinality):
     """original name of this function is smallest_subset_interval"""
     if subset_cardinality < 2:
         raise ValueError("subset_cardinality must be at least 2")
+    elif subset_cardinality >= len(samples):
+        return samples
     samples.sort()
     differences = samples[subset_cardinality - 1:] - samples[:-subset_cardinality + 1]
     argmin = np.argmin(differences)
