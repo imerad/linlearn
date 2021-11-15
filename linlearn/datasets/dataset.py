@@ -403,12 +403,12 @@ class Dataset:
             corrupted_indices = rng.choice(df_train.index, size=int(corruption_rate * n_samples_train), replace=False)
             cnt_cols = self.continuous_columns or []
             cat_cols = self.categorical_columns or []
+            assert self.label_column not in (cat_cols + cnt_cols)
             if self.task == "regression":
                 cnt_cols = cnt_cols + [self.label_column]
             else:
                 cat_cols = cat_cols + [self.label_column]
 
-            assert self.label_column not in (cat_cols + cnt_cols)
 
             n_cnt_features = len(cnt_cols)
             if n_cnt_features > 0:
