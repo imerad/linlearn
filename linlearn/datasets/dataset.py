@@ -408,7 +408,7 @@ class Dataset:
             else:
                 cat_cols = cat_cols + [self.label_column]
 
-            assert self.label_column not in (self.continuous_columns + self.categorical_columns)
+            assert self.label_column not in (cat_cols + cnt_cols)
 
             n_cnt_features = len(cnt_cols)
             if n_cnt_features > 0:
