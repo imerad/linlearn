@@ -46,14 +46,16 @@ def gmom_njit(xs, tol=1e-10):
             dists += xsy[:, i] ** 2  # np.linalg.norm(xsy, axis=1)
         dists[:] = np.sqrt(dists)
         inv_dists[:] = 1 / dists
+        # print("pass2")
         mask = dists < eps
         inv_dists[mask] = 0
-        nb_too_close = (mask).sum()
+        nb_too_close = mask.sum()
         ry = np.sqrt(
             np.sum(np.dot(inv_dists, xsy) ** 2)
         )  # np.linalg.norm(np.dot(inv_dists, xsy))
-        # if ry == 0:
-        #     raise ValueError
+        if ry == 0:
+            break
+
         cst = nb_too_close / ry
         sum_inv_dists = np.sum(inv_dists)
         # if sum_inv_dists == 0:
@@ -62,6 +64,7 @@ def gmom_njit(xs, tol=1e-10):
             max(0, 1 - cst) * np.dot(inv_dists, xs) / sum_inv_dists
             + min(1, cst) * y
         )
+
         delta = np.sqrt(np.sum((y - y_new) ** 2))  # np.linalg.norm(y - y_new)
         y = y_new
         niter += 1
@@ -182,6 +185,7 @@ class GMOM(Estimator):
                 gradient[:] = gmom_grad.reshape(
                     block_means.shape[1:]
                 )
+
                 return sc_prods
 
             return grad

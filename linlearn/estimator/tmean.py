@@ -84,12 +84,12 @@ class TMean(Estimator):
                 # TODO: Try out different sorting mechanisms, since at some point the
                 #  sorting order won't change much...
 
-                # if one_hot_cols[j]:
-                for k in range(n_classes):
-                    partial_derivative[k] = trimmed_mean(deriv_samples[:, k], n_samples, n_excluded_tails)
-                # else:
-                #     for k in range(n_classes):
-                #         partial_derivative[k] = fast_trimmed_mean(deriv_samples[:, k], n_samples, n_excluded_tails)
+                if one_hot_cols[j]:
+                    for k in range(n_classes):
+                        partial_derivative[k] = trimmed_mean(deriv_samples[:, k], n_samples, n_excluded_tails)
+                else:
+                    for k in range(n_classes):
+                        partial_derivative[k] = fast_trimmed_mean(deriv_samples[:, k], n_samples, n_excluded_tails)
 
             return partial_deriv
 
@@ -104,12 +104,12 @@ class TMean(Estimator):
                     for k in range(n_classes):
                         deriv_samples[i, k] *= X[i, j]
 
-                # if one_hot_cols[j]:
-                for k in range(n_classes):
-                    partial_derivative[k] = trimmed_mean(deriv_samples[:, k], n_samples, n_excluded_tails)
-                # else:
-                #     for k in range(n_classes):
-                #         partial_derivative[k] = fast_trimmed_mean(deriv_samples[:, k], n_samples, n_excluded_tails)
+                if one_hot_cols[j]:
+                    for k in range(n_classes):
+                        partial_derivative[k] = trimmed_mean(deriv_samples[:, k], n_samples, n_excluded_tails)
+                else:
+                    for k in range(n_classes):
+                        partial_derivative[k] = fast_trimmed_mean(deriv_samples[:, k], n_samples, n_excluded_tails)
 
             return partial_deriv
 
@@ -140,8 +140,8 @@ class TMean(Estimator):
 
                 for k in range(n_classes):
 
-                    # gradient[0, k] = fast_trimmed_mean(deriv_samples_outer_prods[:, k], n_samples, n_excluded_tails)
-                    gradient[0, k] = trimmed_mean(deriv_samples_outer_prods[:, k], n_samples, n_excluded_tails)
+                    gradient[0, k] = fast_trimmed_mean(deriv_samples_outer_prods[:, k], n_samples, n_excluded_tails)
+                    # gradient[0, k] = trimmed_mean(deriv_samples_outer_prods[:, k], n_samples, n_excluded_tails)
 
                 for k in range(n_classes):
                     for j in range(n_features):
@@ -149,10 +149,10 @@ class TMean(Estimator):
                             deriv_samples_outer_prods[i, k] = (
                                 deriv_samples[i, k] * X[i, j]
                             )
-                        # if one_hot_cols[j]:
-                        gradient[j + 1, k] = trimmed_mean(deriv_samples_outer_prods[:, k], n_samples, n_excluded_tails)
-                        # else:
-                        #     gradient[j + 1, k] = fast_trimmed_mean(deriv_samples_outer_prods[:, k], n_samples, n_excluded_tails)
+                        if one_hot_cols[j]:
+                            gradient[j + 1, k] = trimmed_mean(deriv_samples_outer_prods[:, k], n_samples, n_excluded_tails)
+                        else:
+                            gradient[j + 1, k] = fast_trimmed_mean(deriv_samples_outer_prods[:, k], n_samples, n_excluded_tails)
 
             return grad
         else:
@@ -167,17 +167,17 @@ class TMean(Estimator):
                     deriv_loss(y[i], inner_products[i], deriv_samples[i])
 
                 for j in range(n_features):
-                    # if one_hot_cols[j]:
-                    #     tmean_fct = trimmed_mean
-                    # else:
-                    #     tmean_fct = fast_trimmed_mean
+                    if one_hot_cols[j]:
+                        tmean_fct = trimmed_mean
+                    else:
+                        tmean_fct = fast_trimmed_mean
                     for k in range(n_classes):
                         for i in range(n_samples):
                             deriv_samples_outer_prods[i, k] = (
                                     deriv_samples[i, k] * X[i, j]
                             )
 
-                        gradient[j, k] = trimmed_mean(deriv_samples_outer_prods[:, k], n_samples, n_excluded_tails)
+                        gradient[j, k] = tmean_fct(deriv_samples_outer_prods[:, k], n_samples, n_excluded_tails)
 
                 return 0
             return grad

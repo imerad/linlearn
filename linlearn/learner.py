@@ -24,6 +24,8 @@ from ._loss import (
     MultiLogistic,
     LeastSquares,
     Huber,
+    ModifiedHuber,
+    MultiModifiedHuber,
     SquaredHinge,
     MultiSquaredHinge,
     compute_steps,
@@ -51,6 +53,8 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         "logistic",
         "leastsquares",
         "huber",
+        "modifiedhuber",
+        "multimodifiedhuber",
         "multilogistic",
         "squaredhinge",
         "multisquaredhinge",
@@ -338,6 +342,10 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             return LeastSquares()
         elif self.loss == "huber":
             return Huber()
+        elif self.loss == "modifiedhuber":
+            return ModifiedHuber()
+        elif self.loss == "multimodifiedhuber":
+            return MultiModifiedHuber(self.n_classes)
         elif self.loss == "multilogistic":
             return MultiLogistic(self.n_classes)
         elif self.loss == "squaredhinge":
@@ -563,6 +571,11 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
             self.loss = "multisquaredhinge"
         elif self.loss == "multisquaredhinge":
             pass
+        elif self.loss == "modifiedhuber":
+            # if we are in the multiclass case switch to multiclass loss
+            self.loss = "multimodifiedhuber"
+        elif self.loss == "multimodifiedhuber":
+            pass
         else:
             raise ValueError(
                 "You should specify a classification loss, got loss=%s" % self.loss
@@ -576,6 +589,10 @@ class BaseLearner(ClassifierMixin, BaseEstimator):
         elif self.loss == "multisquaredhinge":
             self.loss = "squaredhinge"
         elif self.loss == "squaredhinge":
+            pass
+        elif self.loss == "multimodifiedhuber":
+            self.loss = "modifiedhuber"
+        elif self.loss == "modifiedhuber":
             pass
         else:
             raise ValueError(

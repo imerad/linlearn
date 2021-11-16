@@ -482,6 +482,90 @@ class Huber(Loss):
 
 
 ################################################################
+# Modified Huber loss
+################################################################
+
+
+class ModifiedHuber(Loss):
+    def __init__(self):
+        self.lip = 2.0
+
+    def value_factory(self):
+        @jit(**jit_kwargs)
+        def value(y, z):
+            agreement = y * z[0]
+            if agreement > -1:
+                return max(0.0, 1 - agreement) ** 2
+            else:
+                return -4 * agreement
+
+        return value
+
+    def deriv_factory(self):
+        @jit(inline="always", **jit_kwargs)
+        def deriv(y, z, out):
+            agreement = y * z[0]
+            if agreement < -1:
+                out[0] = -4 * y
+            if agreement < 1:
+                out[0] = -2 * y * (1 - agreement)
+            else:
+                out[0] = 0
+
+        return deriv
+
+
+################################################################
+# Multiclass Modified Huber loss
+################################################################
+
+
+class MultiModifiedHuber(Loss):
+    def __init__(self, n_classes):
+        self.lip = 2.0
+        self.n_classes = n_classes
+
+    def value_factory(self):
+        n_classes = self.n_classes
+        @jit(**jit_kwargs)
+        def value(y, z):
+            val = 0.0
+            for i in range(n_classes):
+                if i == y:
+                    agreement = z[i]
+                else:
+                    agreement = -z[i]
+                if agreement > -1:
+                    val += max(0.0, 1 - agreement) ** 2
+                else:
+                    val -= 4 * agreement
+            return val
+
+        return value
+
+    def deriv_factory(self):
+        n_classes = self.n_classes
+        @jit(inline="always", **jit_kwargs)
+        def deriv(y, z, out):
+            for i in range(n_classes):
+                if i == y:
+                    agreement = z[i]
+                    sign = +1
+                else:
+                    agreement = -z[i]
+                    sign = -1
+
+                if agreement < -1:
+                    out[i] = -4 * sign
+                if agreement < 1:
+                    out[i] = -2 * sign * (1 - agreement)
+                else:
+                    out[i] = 0
+
+        return deriv
+
+
+################################################################
 # Multiclass Squared-Hinge loss
 ################################################################
 

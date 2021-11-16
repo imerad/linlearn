@@ -63,6 +63,7 @@ from experiment import (  # noqa: E402
     ERM_CGD_Experiment,
     HuberGrad_Experiment,
     Huber_Experiment,
+    ModifiedHuber_CGD_Experiment,
     LAD_Experiment,
     RANSAC_Experiment,
 )
@@ -88,6 +89,7 @@ def set_experiment(
         "RANSAC": RANSAC_Experiment,
         "LAD": LAD_Experiment,
         "HUBER": Huber_Experiment,
+        "MODIFHUBER": ModifiedHuber_CGD_Experiment,
     }
     return experiment_select[clf_name](
             learning_task,
@@ -437,11 +439,11 @@ def run_hyperopt(
         X_val = np.nan_to_num(X_val)
         X_test = np.nan_to_num(X_test)
 
-    if dataset.name == "internet":
-        std_scaler = StandardScaler()
-        X_train = std_scaler.fit_transform(X_train)
-        X_val = std_scaler.transform(X_val)
-        X_test = std_scaler.transform(X_test)
+    # if dataset.name == "internet":
+    #     std_scaler = StandardScaler()
+    #     X_train = std_scaler.fit_transform(X_train)
+    #     X_val = std_scaler.transform(X_val)
+    #     X_test = std_scaler.transform(X_test)
 
 
     exp = set_experiment(
@@ -671,6 +673,7 @@ if __name__ == "__main__":
             "RANSAC",
             "LAD",
             "HUBER",
+            "MODIFHUBER",
         ],
     )
     parser.add_argument(
@@ -702,7 +705,7 @@ if __name__ == "__main__":
     parser.add_argument("--n_tuned_runs", type=int, default=5)
     parser.add_argument("-o", "--output_folder_path", default=None)
     parser.add_argument("--random_state_seed", type=int, default=42)
-    parser.add_argument("--corruption_rate", type=float, default=0.0)
+    parser.add_argument("--corruption_rates", nargs="+", type=float, default=[0.0])
 
     args = parser.parse_args()
 
@@ -714,7 +717,7 @@ if __name__ == "__main__":
     dataset_name = args.dataset_name.lower()
     loader = set_dataloader(dataset_name)
     random_state_seed = args.random_state_seed
-    corruption_rate = args.corruption_rate
+    corruption_rates = args.corruption_rates
 
     if args.output_folder_path is None:
         if not os.path.exists("results"):
@@ -740,44 +743,49 @@ if __name__ == "__main__":
         os.mkdir(results_home_path + dataset.name)
     results_dataset_path = results_home_path + dataset.name + "/"
 
-    results = run_hyperopt(
-        dataset,
-        learner_name,
-        learning_task,
-        corruption_rate,
-        max_hyperopt_eval,
-        results_dataset_path,
-    )
 
-    print(results)
-
-    now = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-
-    # Get the commit number as a string
-    commit = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"])
-    commit = commit.decode("utf-8").strip()
-
-    filename = (
-        "exp_hyperopt_"
-        + str(max_hyperopt_eval)
-        + "_"
-        + dataset_name + str(corruption_rate)
-        + "_"
-        + learner_name
-        + "_"
-        + now
-        + ".pickle"
-    )
-
-    with open(results_dataset_path + filename, "wb") as f:
-        pkl.dump(
-            {
-                "datetime": now,
-                "commit": commit,
-                "max_hyperopt_eval": max_hyperopt_eval,
-                "results": results,
-            },
-            f,
+    for corruption_rate in corruption_rates:
+        logging.info("Running hyperoptimisation for corruption rate %.2f"%corruption_rate)
+        results = run_hyperopt(
+            dataset,
+            learner_name,
+            learning_task,
+            corruption_rate,
+            max_hyperopt_eval,
+            results_dataset_path,
         )
 
-    logging.info("Saved results in file %s" % results_dataset_path + filename)
+        print(results)
+
+        now = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+
+        # Get the commit number as a string
+        commit = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"])
+        commit = commit.decode("utf-8").strip()
+
+        filename = (
+            "exp_hyperopt_"
+            + str(max_hyperopt_eval)
+            + "_"
+            + dataset_name + str(corruption_rate)
+            + "_"
+            + learner_name
+            + "_"
+            + now
+            + ".pickle"
+        )
+
+        with open(results_dataset_path + filename, "wb") as f:
+            pkl.dump(
+                {
+                    "datetime": now,
+                    "commit": commit,
+                    "max_hyperopt_eval": max_hyperopt_eval,
+                    "results": results,
+                },
+                f,
+            )
+
+        logging.info("Saved results in file %s" % results_dataset_path + filename)
+
+    logging.info("done.")
